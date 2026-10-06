@@ -2,12 +2,8 @@ import { useEffect, useState } from 'react'
 import type { OAuthClient, OAuthClientInput } from '../../../shared/types'
 import { api, toast } from '../store'
 import { Icon } from './Icon'
-
-export const inputCls =
-  'w-full rounded-lg border border-black/15 bg-transparent px-3 py-2 text-[14px] outline-none focus:border-[#0b57d0] focus:ring-1 focus:ring-[#0b57d0] dark:border-white/15'
-export const btnPrimary =
-  'rounded-full bg-[#0b57d0] px-5 py-2 text-[14px] font-medium text-white hover:bg-[#0a4ebb] disabled:opacity-50'
-export const btnGhost = 'rounded-full px-4 py-2 text-[14px] font-medium text-[#0b57d0] hover:bg-[#0b57d0]/10 dark:text-[#a8c7fa]'
+import { confirmDialog } from './Confirm'
+import { btn, Checkbox, inputCls } from './ui'
 
 export function OAuthHelp(): React.JSX.Element {
   const link = (href: string, label: string): React.JSX.Element => (
@@ -17,15 +13,15 @@ export function OAuthHelp(): React.JSX.Element {
         e.preventDefault()
         void api.app.openExternal(href)
       }}
-      className="text-[#0b57d0] underline dark:text-[#a8c7fa]"
+      className="font-medium text-accent hover:underline"
     >
       {label}
     </a>
   )
   return (
-    <details className="rounded-lg bg-black/[.03] px-4 py-3 text-[13px] leading-relaxed dark:bg-white/[.05]">
-      <summary className="cursor-default font-medium">Google OAuth 클라이언트 만드는 방법</summary>
-      <ol className="mt-2 list-decimal space-y-1 pl-5 opacity-90">
+    <details className="group rounded-xl border border-line bg-surface px-4 py-3 text-[12.5px] leading-relaxed text-ink-2">
+      <summary className="flex cursor-default list-none items-center gap-2 font-semibold text-ink"><Icon name="chevronRight" size={13} className="text-ink-3 transition-transform group-open:rotate-90" />Google OAuth 클라이언트 만드는 방법</summary>
+      <ol className="mt-2.5 list-decimal space-y-1.5 pl-5 marker:text-ink-3">
         <li>{link('https://console.cloud.google.com/projectcreate', 'Google Cloud 콘솔')}에서 프로젝트를 만듭니다.</li>
         <li>
           {link('https://console.cloud.google.com/apis/library/gmail.googleapis.com', 'Gmail API')}를 사용 설정합니다.
@@ -40,7 +36,7 @@ export function OAuthHelp(): React.JSX.Element {
         </li>
         <li>생성된 클라이언트 ID와 보안 비밀번호를 아래에 붙여넣습니다.</li>
       </ol>
-      <p className="mt-2 opacity-70">
+      <p className="mt-2.5 text-ink-3">
         참고: 테스트 모드 앱의 refresh token은 7일 후 만료됩니다. 만료되면 계정 옆에 &quot;재로그인 필요&quot;가 표시되며, 한 번
         클릭으로 다시 로그인할 수 있습니다(캐시된 메일은 계속 볼 수 있습니다).
       </p>
@@ -86,11 +82,11 @@ export function OAuthClientForm(props: {
   return (
     <div className="space-y-3">
       <label className="block">
-        <span className="mb-1 block text-[13px] opacity-70">이름</span>
+        <span className="mb-1.5 block text-[12px] font-medium text-ink-2">이름</span>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 개인 Gmail" className={inputCls} />
       </label>
       <label className="block">
-        <span className="mb-1 block text-[13px] opacity-70">클라이언트 ID</span>
+        <span className="mb-1.5 block text-[12px] font-medium text-ink-2">클라이언트 ID</span>
         <input
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
@@ -100,8 +96,8 @@ export function OAuthClientForm(props: {
         />
       </label>
       <label className="block">
-        <span className="mb-1 block text-[13px] opacity-70">
-          클라이언트 보안 비밀번호 {initial?.hasSecret && <span className="opacity-60">(비워두면 기존 값 유지)</span>}
+        <span className="mb-1.5 block text-[12px] font-medium text-ink-2">
+          클라이언트 보안 비밀번호 {initial?.hasSecret && <span className="font-normal text-ink-3">(비워두면 기존 값 유지)</span>}
         </span>
         <input
           type="password"
@@ -113,21 +109,21 @@ export function OAuthClientForm(props: {
         />
       </label>
       <label className="block">
-        <span className="mb-1 block text-[13px] opacity-70">도메인 (선택, 쉼표로 구분)</span>
+        <span className="mb-1.5 block text-[12px] font-medium text-ink-2">도메인 (선택, 쉼표로 구분)</span>
         <input value={domains} onChange={(e) => setDomains(e.target.value)} placeholder="예: school.ac.kr" className={inputCls} />
-        <span className="mt-1 block text-[12px] opacity-50">이 도메인의 주소를 추가할 때 자동으로 이 클라이언트를 사용합니다.</span>
+        <span className="mt-1.5 block text-[12px] text-ink-3">이 도메인의 주소를 추가할 때 자동으로 이 클라이언트를 사용합니다.</span>
       </label>
-      <label className="flex items-center gap-2 text-[13px]">
-        <input type="checkbox" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} className="accent-[#0b57d0]" />
-        기본 클라이언트로 사용
-      </label>
+      <div className="flex items-center gap-2 text-[13px] text-ink-2">
+        <Checkbox checked={isDefault} onChange={() => setIsDefault(!isDefault)} />
+        <span onClick={() => setIsDefault(!isDefault)}>기본 클라이언트로 사용</span>
+      </div>
       <div className="flex justify-end gap-2 pt-1">
         {props.onCancel && (
-          <button className={btnGhost} onClick={props.onCancel}>
+          <button className={btn.ghost} onClick={props.onCancel}>
             취소
           </button>
         )}
-        <button className={btnPrimary} disabled={busy || !clientId.trim()} onClick={() => void save()}>
+        <button className={btn.primary} disabled={busy || !clientId.trim()} onClick={() => void save()}>
           저장
         </button>
       </div>
@@ -160,44 +156,44 @@ export function OAuthClientsPanel(): React.JSX.Element {
 
   return (
     <div className="space-y-3">
-      <p className="text-[13px] opacity-70">
+      <p className="text-[12.5px] leading-relaxed text-ink-2">
         Gmail 계정 로그인에 사용할 Google OAuth 클라이언트입니다. 개인 계정용과 Workspace 도메인용 등 여러 개를 등록할 수 있습니다.
       </p>
       {clients.length === 0 && (
-        <div className="rounded-lg border border-dashed border-black/20 p-6 text-center text-[13px] opacity-70 dark:border-white/20">
+        <div className="rounded-xl border border-dashed border-line-strong p-6 text-center text-[12.5px] text-ink-3">
           등록된 클라이언트가 없습니다.
         </div>
       )}
       {clients.map((c) => (
-        <div key={c.id} className="flex items-center gap-3 rounded-lg border border-black/10 px-4 py-3 dark:border-white/10">
-          <Icon name="key" size={18} className="opacity-60" />
+        <div key={c.id} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-hover text-ink-2"><Icon name="key" size={15} /></span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="truncate font-medium">{c.name}</span>
-              {c.isDefault && <span className="rounded bg-[#0b57d0]/10 px-1.5 text-[11px] text-[#0b57d0] dark:text-[#a8c7fa]">기본</span>}
+              <span className="truncate text-[13px] font-semibold">{c.name}</span>
+              {c.isDefault && <span className="rounded-md bg-accent-soft px-1.5 text-[11px] font-semibold leading-[18px] text-accent">기본</span>}
               {c.domains.map((d) => (
-                <span key={d} className="rounded bg-black/5 px-1.5 text-[11px] dark:bg-white/10">
+                <span key={d} className="rounded-md bg-hover px-1.5 text-[11px] leading-[18px] text-ink-2">
                   @{d}
                 </span>
               ))}
             </div>
-            <div className="truncate font-mono text-[11px] opacity-50">
+            <div className="mt-0.5 truncate font-mono text-[11px] text-ink-3">
               {c.clientId.slice(0, 18)}… · 계정 {c.accountCount}개{!c.hasSecret && ' · 보안 비밀번호 없음'}
             </div>
           </div>
           {!c.isDefault && (
-            <button className="text-[12px] opacity-70 hover:underline" onClick={() => void api.oauthClients.setDefault(c.id).then(reload)}>
+            <button className={btn.link} onClick={() => void api.oauthClients.setDefault(c.id).then(reload)}>
               기본으로
             </button>
           )}
-          <button className="text-[12px] opacity-70 hover:underline" onClick={() => setEditing(c)}>
+          <button className={btn.link} onClick={() => setEditing(c)}>
             편집
           </button>
           <button
-            className="text-[12px] text-red-600 opacity-80 hover:underline disabled:opacity-30"
+            className={btn.danger}
             title={c.accountCount ? '이 클라이언트를 사용하는 계정이 있습니다' : '삭제'}
-            onClick={() => {
-              if (!confirm(`"${c.name}" 클라이언트를 삭제할까요?`)) return
+            onClick={async () => {
+              if (!(await confirmDialog({ title: `"${c.name}" 클라이언트를 삭제할까요?`, confirmLabel: '삭제', danger: true }))) return
               api.oauthClients
                 .remove(c.id)
                 .then(reload)
@@ -208,8 +204,9 @@ export function OAuthClientsPanel(): React.JSX.Element {
           </button>
         </div>
       ))}
-      <button className={btnGhost} onClick={() => setEditing('new')}>
-        + 클라이언트 추가
+      <button className={btn.secondary} onClick={() => setEditing('new')}>
+        <Icon name="plus" size={14} />
+        클라이언트 추가
       </button>
     </div>
   )

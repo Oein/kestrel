@@ -9,6 +9,9 @@ import type {
   MessageBody,
   MessageMeta,
   ProviderKind,
+  Rule,
+  RuleLanguage,
+  RuleSampleMessage,
   ThreadRow,
   View
 } from '../../shared/types'
@@ -69,6 +72,41 @@ export interface MessageUpsert {
   /** full mailbox ids (`${accountId}:${remoteId}`) */
   mailboxIds: string[]
 }
+
+export interface RuleRow {
+  id: string
+  name: string
+  enabled: number
+  language: RuleLanguage
+  code: string
+  account_id: string | null
+  sort: number
+  created_at: number
+  last_error: string | null
+  last_run_at: number | null
+  hit_count: number
+}
+
+export interface MailboxInfoRow {
+  id: string
+  account_id: string
+  remote_id: string
+  name: string
+  path: string
+  role: MailboxRole | null
+  type: 'system' | 'user' | 'category'
+}
+
+/** Local-only category "mailboxes" for IMAP accounts so the inbox category tabs work there too. */
+export const LOCAL_CATEGORIES: MailboxUpsert[] = [
+  { remoteId: 'CATEGORY_PROMOTIONS', name: '프로모션', path: '프로모션', role: null, type: 'category' },
+  { remoteId: 'CATEGORY_SOCIAL', name: '소셜', path: '소셜', role: null, type: 'category' },
+  { remoteId: 'CATEGORY_UPDATES', name: '업데이트', path: '업데이트', role: null, type: 'category' }
+]
+
+/** Label ids of the form `${accountId}:CATEGORY_*` (Gmail categories, or local IMAP categories). */
+export const isCategoryLabel = (accountId: string, labelId: string): boolean =>
+  labelId.startsWith(`${accountId}:CATEGORY_`)
 
 export interface MessageState {
   id: number
@@ -294,7 +332,8 @@ export class Repo {
   }
 
   // ---------- mailboxes ----------
-  replaceMailboxes(accountId: string, list: MailboxUpsert[]): void {
+  /** `keepCategories`: keep existing category mailboxes not in `list` (IMAP local categories). */
+  replaceMailboxes(accountId: string, list: MailboxUpsert[], opts: { keepCategories?: boolean } = {}): void {
     const upsert = this.db.prepare(
       `INSERT INTO mailboxes (id, account_id, remote_id, name, path, role, type, color_bg, color_text)
        VALUES (@id, @account_id, @remote_id, @name, @path, @role, @type, @color_bg, @color_text)
@@ -318,8 +357,9 @@ export class Repo {
           color_text: mb.colorText ?? null
         })
       }
-      const existing = this.db.prepare('SELECT id FROM mailboxes WHERE account_id = ?').all(accountId) as { id: string }[]
-      for (const { id } of existing) {
+      const existing = this.db.prepare('SELECT id, type FROM mailboxes WHERE account_id = ?').all(accountId) as { id: string; type: string }[]
+      for (const { id, type } of existing) {
+        if (opts.keepCategories && type === 'category') continue
         if (!keep.has(id)) {
           this.db.prepare('DELETE FROM message_labels WHERE mailbox_id = ?').run(id)
           this.db.prepare('DELETE FROM mailboxes WHERE id = ?').run(id)
@@ -377,6 +417,26 @@ export class Repo {
     return this.db.prepare('SELECT id, remote_id FROM mailboxes WHERE account_id = ? AND role = ?').get(accountId, role) as never
   }
 
+  mailboxInfos(accountId: string): MailboxInfoRow[] {
+    return this.db
+      .prepare('SELECT id, account_id, remote_id, name, path, role, type FROM mailboxes WHERE account_id = ?')
+      .all(accountId) as MailboxInfoRow[]
+  }
+
+  /** Create the local category mailboxes of an IMAP account (idempotent). */
+  ensureLocalCategories(accountId: string): boolean {
+    const have = new Set(this.mailboxInfos(accountId).map((m) => m.remote_id))
+    const missing = LOCAL_CATEGORIES.filter((c) => !have.has(c.remoteId))
+    if (!missing.length) return false
+    const ins = this.db.prepare(
+      `INSERT OR IGNORE INTO mailboxes (id, account_id, remote_id, name, path, role, type) VALUES (?, ?, ?, ?, ?, NULL, 'category')`
+    )
+    this.db.transaction(() => {
+      for (const c of missing) ins.run(mailboxId(accountId, c.remoteId), accountId, c.remoteId, c.name, c.path)
+    })()
+    return true
+  }
+
   setMailboxSync(id: string, state: unknown): void {
     this.db.prepare('UPDATE mailboxes SET sync_json = ? WHERE id = ?').run(JSON.stringify(state), id)
   }
@@ -388,7 +448,11 @@ export class Repo {
 
   // ---------- messages ----------
   private upsertStmt?: Database.Statement
-  upsertMessages(accountId: string, list: MessageUpsert[]): number[] {
+  /**
+   * `keepLocalCategories` (IMAP): category labels are local-only, so keep the ones an existing row already has
+   * instead of replacing them with the server's folder list.
+   */
+  upsertMessages(accountId: string, list: MessageUpsert[], opts: { keepLocalCategories?: boolean } = {}): number[] {
     this.upsertStmt ??= this.db.prepare(
       `INSERT INTO messages (account_id, remote_id, thread_id, subject, from_name, from_email, to_json, cc_json,
          reply_to_json, snippet, date, is_read, is_starred, has_attachments, attachments_json, message_id_header,
@@ -412,9 +476,17 @@ export class Repo {
       'INSERT INTO messages_fts (rowid, subject, sender, recipients, snippet, body) VALUES (?, ?, ?, ?, ?, ?)'
     )
     const ftsHas = this.db.prepare('SELECT 1 FROM messages_fts WHERE rowid = ?')
+    const catsOf = this.db.prepare(
+      `SELECT l.mailbox_id FROM messages m JOIN message_labels l ON l.message_id = m.id
+       WHERE m.account_id = ? AND m.remote_id = ? AND l.mailbox_id LIKE ? ESCAPE '\\'`
+    )
+    const catPattern = `${accountId.replace(/[\\%_]/g, (c) => `\\${c}`)}:CATEGORY\\_%`
     const ids: number[] = []
     this.db.transaction(() => {
       for (const msg of list) {
+        const keptCats = opts.keepLocalCategories
+          ? (catsOf.all(accountId, msg.remoteId, catPattern) as { mailbox_id: string }[]).map((r) => r.mailbox_id)
+          : []
         const row = this.upsertStmt!.get({
           account_id: accountId,
           remote_id: msg.remoteId,
@@ -437,7 +509,7 @@ export class Repo {
           size: msg.size
         }) as { id: number }
         ids.push(row.id)
-        this.setLabelsRaw(row.id, msg.mailboxIds)
+        this.setLabelsRaw(row.id, keptCats.length ? [...new Set([...msg.mailboxIds, ...keptCats])] : msg.mailboxIds)
         if (!ftsHas.get(row.id)) {
           ftsInsert.run(
             row.id,
@@ -604,8 +676,11 @@ export class Repo {
           conds.push(NOT_TRASH)
           break
         case 'trash':
+          conds.push(hasRole('trash'))
+          break
         case 'junk':
-          conds.push(hasRole(view.role))
+          // a message being trashed may still carry SPAM until the server confirms
+          conds.push(hasRole('junk'), `NOT ${hasRole('trash')}`)
           break
         default:
           conds.push(hasRole(view.role), NOT_TRASH)
@@ -658,7 +733,8 @@ export class Repo {
                       FROM messages m WHERE ${where}),
            g AS (SELECT account_id, thread_id, MAX(date) AS maxdate, COUNT(*) AS cnt, MIN(is_read) AS all_read,
                         MAX(is_starred) AS any_star, MAX(has_attachments) AS any_att
-                 FROM f GROUP BY account_id, thread_id ORDER BY maxdate DESC LIMIT ? OFFSET ?)
+                 FROM f GROUP BY account_id, thread_id ${view.unreadOnly ? 'HAVING MIN(is_read) = 0' : ''}
+                 ORDER BY maxdate DESC LIMIT ? OFFSET ?)
            SELECT g.*, (SELECT f.id FROM f WHERE f.account_id = g.account_id AND f.thread_id = g.thread_id
                         ORDER BY f.date DESC, f.id DESC LIMIT 1) AS rep_id
            FROM g ORDER BY maxdate DESC`
@@ -766,6 +842,88 @@ export class Repo {
     return toMeta(r, this.states([id])[0]?.labels ?? [])
   }
 
+  /** Of the given ids: unread messages that are (still) in an inbox and not in trash/spam, newest first. */
+  notifiableIds(ids: number[]): number[] {
+    if (!ids.length) return []
+    return (
+      this.db
+        .prepare(
+          `SELECT m.id FROM messages m WHERE m.id IN (${ids.map(() => '?').join(',')})
+           AND m.is_read = 0 AND ${hasRole('inbox')} AND ${NOT_TRASH} ORDER BY m.date DESC`
+        )
+        .all(...ids) as { id: number }[]
+    ).map((r) => r.id)
+  }
+
+  /** Latest inbox message ids (newest first), optionally for one account. */
+  recentInboxIds(limit: number, accountId?: string | null): number[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT m.id FROM messages m WHERE ${accountId ? 'm.account_id = ? AND' : ''} ${hasRole('inbox')} AND ${NOT_TRASH}
+           ORDER BY m.date DESC LIMIT ?`
+        )
+        .all(...(accountId ? [accountId, limit] : [limit])) as { id: number }[]
+    ).map((r) => r.id)
+  }
+
+  ruleSamples(limit: number): RuleSampleMessage[] {
+    const rows = this.db
+      .prepare(
+        `SELECT m.id, m.account_id, m.subject, m.from_name, m.from_email, m.date FROM messages m
+         WHERE ${hasRole('inbox')} AND ${NOT_TRASH} ORDER BY m.date DESC LIMIT ?`
+      )
+      .all(limit) as { id: number; account_id: string; subject: string; from_name: string; from_email: string; date: number }[]
+    return rows.map((r) => ({
+      id: r.id,
+      accountId: r.account_id,
+      subject: r.subject,
+      from: { name: r.from_name, email: r.from_email },
+      date: r.date
+    }))
+  }
+
+  // ---------- rules ----------
+  listRules(): Rule[] {
+    return (this.db.prepare('SELECT * FROM rules ORDER BY sort, created_at').all() as RuleRow[]).map(toRule)
+  }
+
+  rule(id: string): Rule | undefined {
+    const r = this.db.prepare('SELECT * FROM rules WHERE id = ?').get(id) as RuleRow | undefined
+    return r ? toRule(r) : undefined
+  }
+
+  upsertRule(r: { id: string; name: string; enabled: boolean; language: RuleLanguage; code: string; accountId: string | null }): void {
+    const exists = this.db.prepare('SELECT 1 FROM rules WHERE id = ?').get(r.id)
+    if (exists) {
+      this.db
+        .prepare('UPDATE rules SET name = ?, enabled = ?, language = ?, code = ?, account_id = ?, last_error = NULL WHERE id = ?')
+        .run(r.name, r.enabled ? 1 : 0, r.language, r.code, r.accountId, r.id)
+    } else {
+      this.db
+        .prepare(
+          `INSERT INTO rules (id, name, enabled, language, code, account_id, sort, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(sort), 0) + 1 FROM rules), ?)`
+        )
+        .run(r.id, r.name, r.enabled ? 1 : 0, r.language, r.code, r.accountId, Date.now())
+    }
+  }
+
+  deleteRule(id: string): void {
+    this.db.prepare('DELETE FROM rules WHERE id = ?').run(id)
+  }
+
+  reorderRules(ids: string[]): void {
+    const upd = this.db.prepare('UPDATE rules SET sort = ? WHERE id = ?')
+    this.db.transaction(() => ids.forEach((id, i) => upd.run(i + 1, id)))()
+  }
+
+  recordRuleRun(id: string, run: { error: string | null; hits: number }): void {
+    this.db
+      .prepare('UPDATE rules SET last_error = ?, last_run_at = ?, hit_count = hit_count + ? WHERE id = ?')
+      .run(run.error, Date.now(), run.hits, id)
+  }
+
   unreadInboxTotal(): number {
     return (
       this.db
@@ -838,6 +996,22 @@ function toMeta(r: MessageRowDb, labels: string[]): MessageMeta {
     inReplyTo: r.in_reply_to,
     references: r.refs,
     labelIds: labels
+  }
+}
+
+function toRule(r: RuleRow): Rule {
+  return {
+    id: r.id,
+    name: r.name,
+    enabled: !!r.enabled,
+    language: r.language,
+    code: r.code,
+    accountId: r.account_id,
+    sort: r.sort,
+    createdAt: r.created_at,
+    lastError: r.last_error,
+    lastRunAt: r.last_run_at,
+    hitCount: r.hit_count
   }
 }
 

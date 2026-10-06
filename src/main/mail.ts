@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Notification, shell } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import { randomUUID } from 'crypto'
 import { mkdir, stat, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
@@ -60,11 +60,20 @@ export class MailService {
   private badgeTimer: NodeJS.Timeout | null = null
   private lastFocusSync = 0
 
+  /** runs auto-categorization rules on newly arrived inbox mail (before notifications) */
+  rules: { onNewMessages(accountId: string, ids: number[]): Promise<void> } | null = null
+  /** new-mail notifications */
+  notifier: { notify(ids: number[]): void } | null = null
+  /** unread inbox conversations changed (dock badge is handled here; tray title by the listener) */
+  onUnreadCount: ((n: number) => void) | null = null
+
   constructor(
     private repo: Repo,
     private oauth: OAuthClientService,
     private emit: Emit,
-    private getWindow: () => BrowserWindow | null
+    private getWindow: () => BrowserWindow | null,
+    /** dev demo profile: no providers, server commits are no-ops, sends are stored locally */
+    private demo = false
   ) {}
 
   // ---------- lifecycle ----------
@@ -192,7 +201,12 @@ export class MailService {
         this.emit('mailboxes:changed', { accountId })
         this.updateBadge()
       }
-      if (!first && out.newInboxIds.length) this.notify(out.newInboxIds)
+      if (out.newInboxIds.length) {
+        // rules first, so archived / read / trashed mail is not notified (errors never break sync)
+        await this.rules?.onNewMessages(accountId, out.newInboxIds).catch((e: Error) => console.warn('[rules]', e.message))
+        // never notify for the first sync of an account in this session (initial backfill / catch-up)
+        if (!first) this.notifier?.notify(out.newInboxIds)
+      }
     } catch (e) {
       const err = e as Error & { code?: string }
       if (e instanceof ReauthRequiredError) {
@@ -205,41 +219,13 @@ export class MailService {
     }
   }
 
-  // ---------- notifications / badge ----------
-  private notify(ids: number[]): void {
-    const win = this.getWindow()
-    if (win?.isFocused() || !Notification.isSupported()) return
-    const metas = ids.map((id) => this.repo.meta(id)).filter((m) => m && m.unread)
-    const show = metas.slice(0, 3)
-    for (const m of show) {
-      if (!m) continue
-      const n = new Notification({
-        title: m.from.name || m.from.email,
-        subtitle: m.subject || '(제목 없음)',
-        body: m.snippet,
-        silent: false
-      })
-      n.on('click', () => {
-        const w = this.getWindow()
-        if (w) {
-          if (w.isMinimized()) w.restore()
-          w.show()
-          w.focus()
-        }
-        this.emit('open-message', { messageId: m.id })
-      })
-      n.show()
-    }
-    if (metas.length > show.length) {
-      new Notification({ title: 'Mailbird', body: `새 메일 ${metas.length - show.length}통이 더 있습니다.` }).show()
-    }
-  }
-
+  // ---------- badge ----------
   updateBadge(): void {
     if (this.badgeTimer) clearTimeout(this.badgeTimer)
     this.badgeTimer = setTimeout(() => {
       const n = this.repo.unreadInboxTotal()
       app.setBadgeCount(n)
+      this.onUnreadCount?.(n)
     }, 200)
   }
 
@@ -484,6 +470,32 @@ export class MailService {
     return { opId }
   }
 
+  /** Rules: apply computed state changes locally now and commit them to the server right away. */
+  commitRuleChanges(changes: Map<string, StateChange[]>): void {
+    const all = [...changes.values()].flat()
+    if (!all.length) return
+    this.repo.applyStates(all.map((c) => c.after))
+    this.changed([...changes.keys()])
+    const op: PendingAction = { kind: 'action', id: randomUUID(), changes, timer: null, committed: false }
+    void this.commitAction(op)
+  }
+
+  /** Rules: label/folder id for a name, created on the server when missing. */
+  async ensureLabel(accountId: string, name: string): Promise<string> {
+    const p = this.providers.get(accountId)
+    if (!p) {
+      if (!this.demo) throw new Error('계정이 연결되어 있지 않습니다.')
+      // demo: create the label locally
+      const remoteId = `L_${name}`
+      const list = this.repo.mailboxInfos(accountId).map((m) => ({ remoteId: m.remote_id, name: m.name, path: m.path, role: m.role, type: m.type }))
+      this.repo.replaceMailboxes(accountId, [...list, { remoteId, name: name.split('/').pop() ?? name, path: name, role: null, type: 'user' }])
+      return mailboxId(accountId, remoteId)
+    }
+    const id = await p.ensureLabel(name)
+    this.emit('mailboxes:changed', { accountId })
+    return id
+  }
+
   private commitAction(op: PendingAction, inverse = false): Promise<void> {
     op.timer = null
     op.committed = true
@@ -492,6 +504,7 @@ export class MailService {
       const changes = inverse ? list.map((c) => ({ ref: c.ref, before: c.after, after: c.before })) : list
       const prev = this.commitChains.get(accountId) ?? Promise.resolve()
       const next = prev.then(async () => {
+        if (this.demo) return // demo profile: keep the local state, nothing to push
         const provider = this.providers.get(accountId)
         try {
           if (!provider) throw new Error('계정이 연결되어 있지 않습니다.')
@@ -582,6 +595,10 @@ export class MailService {
     op.committed = true
     this.ops.delete(op.id)
     const { draft } = op
+    if (this.demo) {
+      this.storeDemoSent(draft)
+      return
+    }
     try {
       const row = this.repo.accountRow(draft.accountId)
       const provider = this.providers.get(draft.accountId)
@@ -596,6 +613,43 @@ export class MailService {
       this.emit('toast', { kind: 'error', message: `메일을 보내지 못했습니다: ${(e as Error).message}` })
       this.emit('compose:restore', draft)
     }
+  }
+
+  private storeDemoSent(draft: Draft): void {
+    const row = this.repo.accountRow(draft.accountId)
+    if (!row) return
+    const addrs = (s: string): { name: string; email: string }[] =>
+      s.split(',').map((x) => x.trim()).filter(Boolean).map((x) => {
+        const m = /^(.*)<([^>]+)>$/.exec(x)
+        return m ? { name: m[1].trim().replace(/^"|"$/g, ''), email: m[2].trim() } : { name: '', email: x }
+      })
+    const id = randomUUID()
+    const sentMb = this.repo.mailboxByRole(draft.accountId, 'sent')?.id ?? mailboxId(draft.accountId, 'SENT')
+    const [localId] = this.repo.upsertMessages(draft.accountId, [
+      {
+        remoteId: `sent-${id}`,
+        threadId: draft.threadId ?? `t-${id}`,
+        subject: draft.subject,
+        from: { name: row.name, email: row.email },
+        to: addrs(draft.to),
+        cc: addrs(draft.cc),
+        replyTo: [],
+        snippet: draft.body.replace(/\s+/g, ' ').slice(0, 200),
+        date: Date.now(),
+        isRead: true,
+        isStarred: false,
+        hasAttachments: draft.attachments.length > 0,
+        attachments: draft.attachments.map((a, i) => ({ id: `a${i}`, filename: a.filename, mimeType: 'application/octet-stream', size: a.size })),
+        messageIdHeader: `<${id}@demo>`,
+        inReplyTo: draft.inReplyTo ?? null,
+        references: draft.references ?? null,
+        size: draft.body.length,
+        mailboxIds: [sentMb]
+      }
+    ])
+    this.repo.putBody(localId, { html: null, text: draft.body, attachments: [] }, draft.body)
+    this.changed([draft.accountId])
+    this.emit('toast', { kind: 'success', message: '메일을 보냈습니다. (데모: 로컬에만 저장)' })
   }
 
   async pickFiles(): Promise<DraftAttachment[]> {

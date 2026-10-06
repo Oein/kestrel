@@ -1,14 +1,32 @@
 import { shell, type IpcMain } from 'electron'
-import type { ActionRequest, Draft, ImapAccountInput, OAuthClientInput, View } from '../shared/types'
+import type {
+  ActionRequest,
+  AppSettings,
+  Draft,
+  ImapAccountInput,
+  OAuthClientInput,
+  RuleInput,
+  RuleTestRequest,
+  View
+} from '../shared/types'
 import type { Repo } from './db/repo'
 import type { MailService } from './mail'
+import type { Notifier } from './notify'
 import type { OAuthClientService } from './oauthClients'
+import type { RuleEngine } from './rules/engine'
+import type { SettingsService } from './settings'
 import { IMAP_PRESETS } from './providers/imap/presets'
 
 type Handler = (...args: never[]) => unknown
 
 /** Channel names mirror the `window.api` shape: "group.method". */
-export function registerIpc(ipc: IpcMain, repo: Repo, mail: MailService, oauth: OAuthClientService): void {
+export function registerIpc(
+  ipc: IpcMain,
+  repo: Repo,
+  mail: MailService,
+  oauth: OAuthClientService,
+  svc: { settings: SettingsService; rules: RuleEngine; notifier: Notifier }
+): void {
   const handlers: Record<string, Handler> = {
     'accounts.list': () => repo.listAccounts(),
     'accounts.addGmail': (opts: { email?: string; oauthClientId?: string }) => mail.addGmail(opts ?? {}),
@@ -50,7 +68,19 @@ export function registerIpc(ipc: IpcMain, repo: Repo, mail: MailService, oauth: 
 
     'app.openExternal': (url: string) => {
       if (/^(https?:|mailto:)/i.test(url)) return shell.openExternal(url)
-    }
+    },
+    'app.testNotification': () => svc.notifier.test(),
+
+    'settings.get': () => svc.settings.get(),
+    'settings.set': (patch: Partial<AppSettings>) => svc.settings.set(patch ?? {}),
+
+    'rules.list': () => svc.rules.list(),
+    'rules.save': (input: RuleInput) => svc.rules.save(input),
+    'rules.remove': (id: string) => svc.rules.remove(id),
+    'rules.reorder': (ids: string[]) => svc.rules.reorder(ids),
+    'rules.test': (req: RuleTestRequest) => svc.rules.test(req ?? {}),
+    'rules.runNow': (ruleId?: string) => svc.rules.runNow(ruleId),
+    'rules.samples': (limit?: number) => svc.rules.samples(limit)
   }
   for (const [channel, fn] of Object.entries(handlers)) {
     ipc.handle(channel, async (_e, ...args) => {

@@ -52,7 +52,11 @@ export interface State {
   paletteOpen: boolean
   addAccountOpen: boolean
   settingsOpen: boolean
+  /** tab to show when settings opens (e.g. 'general', 'rules'); set by ⌘, / the tray */
+  settingsTab: string | null
   searchText: string
+  /** "안 읽은 메일만" filter; sticks while moving between folders */
+  unreadOnly: boolean
 }
 
 const initialView: View = { kind: 'role', role: 'inbox', accountId: null, category: 'primary' }
@@ -93,7 +97,9 @@ export const useStore = create<State>(() => ({
   paletteOpen: false,
   addAccountOpen: false,
   settingsOpen: false,
-  searchText: ''
+  settingsTab: null,
+  searchText: '',
+  unreadOnly: loadPref('unreadOnly', false)
 }))
 
 const set = useStore.setState
@@ -154,6 +160,7 @@ async function loadMoreRowsIfMore(): Promise<void> {
 }
 
 export function setView(view: View): void {
+  view = { ...view, unreadOnly: get().unreadOnly || undefined }
   const key = viewKey(view)
   const cached = listCache.get(key)
   set({
@@ -184,6 +191,12 @@ export function setAccountFilter(accountId: string | null): void {
   const v = get().view
   if (v.kind === 'label') setView({ kind: 'role', role: 'inbox', accountId, category: 'primary' })
   else setView({ ...v, accountId } as View)
+}
+
+export function toggleUnreadOnly(on = !get().unreadOnly): void {
+  savePref('unreadOnly', on)
+  set({ unreadOnly: on })
+  setView(get().view)
 }
 
 export function setReadingPane(on: boolean): void {
@@ -319,14 +332,18 @@ export async function act(action: MailAction, ids: number[] = currentTargets(), 
   if (!ids.length) return
   const s = get()
   const idSet = new Set(ids)
-  const disappears = willDisappear(s.view, action)
+  // reading a mail in the "안 읽음" view drops it from the list, but the open mail stays open
+  const readInUnreadView = !!s.view.unreadOnly && action.type === 'read' && action.value
+  const disappears = willDisappear(s.view, action) || readInUnreadView
   const undoable = !!ACTION_LABEL[action.type] && !opts.quiet
   if (disappears) {
     const firstIdx = s.rows.findIndex((r) => idSet.has(r.id))
     const rows = s.rows.filter((r) => !idSet.has(r.id))
     let openId = s.openId
     let cursor = Math.min(firstIdx >= 0 ? firstIdx : s.cursor, Math.max(0, rows.length - 1))
-    if (openId !== null && idSet.has(openId)) {
+    // the open mail left the list: keep the cursor just above its old slot so J opens the next one
+    if (readInUnreadView) cursor = Math.max(0, cursor - 1)
+    if (openId !== null && idSet.has(openId) && !readInUnreadView) {
       // reading pane: open the next conversation; full view: back to the list
       openId = s.readingPane && rows[cursor] ? rows[cursor].id : null
     }
@@ -458,7 +475,9 @@ function quotedOf(m: MessageMeta): string {
   return `<div>${escapeHtml(m.snippet)}</div>`
 }
 
-export function reply(m: MessageMeta, mode: 'reply' | 'replyAll' | 'forward'): void {
+export async function reply(m: MessageMeta, mode: 'reply' | 'replyAll' | 'forward'): Promise<void> {
+  // quote the whole previous message, not just its snippet (usually already prefetched, so this is instant)
+  if (!cachedBody(m.id)) await fetchBody(m.id).catch(() => undefined)
   const s = get()
   const account = s.accounts.find((a) => a.id === m.accountId)
   const me = account?.email.toLowerCase() ?? ''
@@ -514,7 +533,11 @@ export async function refreshMailboxes(): Promise<void> {
   set({ mailboxes: await api.mailboxes.list() })
 }
 
+let started = false
+/** App bootstrap. Idempotent: React StrictMode runs effects twice in dev, and listeners must only be registered once. */
 export async function init(): Promise<void> {
+  if (started) return
+  started = true
   const [accounts, mailboxes, statuses] = await Promise.all([
     api.accounts.list(),
     api.mailboxes.list(),
@@ -552,6 +575,13 @@ export async function init(): Promise<void> {
     if (v.kind === 'search' && v.token === token) void loadList({ keepCount: true })
   })
   api.on('compose:restore', (draft) => openCompose(draft, draft.subject || '새 메일'))
+  api.on('app:openSettings', ({ tab }) => openSettings(tab))
+  api.on('app:compose', () => openCompose())
 
   window.addEventListener('focus', () => api.app.focusChanged(true))
+}
+
+/** Open the settings dialog, optionally at a tab id ('general', 'rules', ...). */
+export function openSettings(tab?: string | null): void {
+  set({ settingsOpen: true, settingsTab: tab ?? null })
 }

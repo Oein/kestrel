@@ -11,84 +11,44 @@ import {
   setAccountFilter,
   setReadingPane,
   setSearchText,
+  toggleUnreadOnly,
   useStore
 } from '../store'
-import { Icon } from './Icon'
-
-export function TopBar(): React.JSX.Element {
-  const searchText = useStore((s) => s.searchText)
-  const accounts = useStore((s) => s.accounts)
-  const filter = useStore((s) => s.accountFilter)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => {
-    const focus = (): void => ref.current?.focus()
-    window.addEventListener('mailbird:focus-search', focus)
-    return () => window.removeEventListener('mailbird:focus-search', focus)
-  }, [])
-  const account = accounts.find((a) => a.id === filter)
-  return (
-    <div className="drag flex h-[52px] shrink-0 items-center gap-3 pr-4">
-      <div className="no-drag flex h-11 max-w-[720px] flex-1 items-center gap-2 rounded-full bg-[#e9eef6] px-4 focus-within:bg-white focus-within:shadow-md dark:bg-[#22262d] dark:focus-within:bg-[#2a2e36]">
-        <Icon name="search" className="opacity-60" />
-        <input
-          ref={ref}
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter') runSearch(searchText, true)
-            if (e.key === 'Escape') {
-              setSearchText('')
-              ref.current?.blur()
-            }
-            if (e.key === 'ArrowDown') ref.current?.blur()
-          }}
-          placeholder={account ? `${account.email}에서 검색` : '메일 검색 (from:, to:, subject:, is:unread, has:attachment)'}
-          className="h-full flex-1 bg-transparent outline-none placeholder:opacity-60"
-        />
-        {searchText && (
-          <button onClick={() => setSearchText('')} className="opacity-60 hover:opacity-100">
-            <Icon name="close" size={18} />
-          </button>
-        )}
-      </div>
-      <div className="flex-1" />
-      <button
-        onClick={() => useStore.setState({ paletteOpen: true })}
-        className="no-drag flex items-center gap-1 rounded-full px-3 py-1.5 text-[12px] opacity-60 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-        title="명령 팔레트"
-      >
-        <kbd>⌘K</kbd>
-      </button>
-    </div>
-  )
-}
+import { Icon, type IconName } from './Icon'
+import { useLeaving } from '../lib/motion'
+import { setPref, usePrefs } from '../lib/prefs'
+import { openSettings } from './Dialogs'
+import { AccountMark, cx } from './ui'
 
 export function Toasts(): React.JSX.Element {
-  const toasts = useStore((s) => s.toasts)
+  const toasts = useLeaving(useStore((s) => s.toasts))
   return (
-    <div className="pointer-events-none fixed bottom-5 left-5 z-[60] flex flex-col gap-2">
+    <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex flex-col items-center gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto flex min-w-[300px] max-w-[520px] items-center gap-4 rounded-md px-4 py-3 text-[14px] shadow-lg ${
-            t.kind === 'error' ? 'bg-[#b3261e] text-white' : 'bg-[#303030] text-[#f2f2f2] dark:bg-[#e3e3e3] dark:text-[#1f1f1f]'
-          }`}
+          className={`${t.leaving ? 'animate-sink pointer-events-none' : 'animate-rise pointer-events-auto'} flex h-10 max-w-[560px] items-center gap-3 rounded-xl bg-[#1f1e1b] pl-3.5 pr-1.5 text-[13px] text-[#f1efea] shadow-float dark:bg-[#f1efea] dark:text-[#1f1e1b]`}
         >
-          <span className="flex-1">{t.message}</span>
+          {t.kind === 'error' ? (
+            <Icon name="warning" size={15} className="text-[#ff8a75] dark:text-danger" />
+          ) : t.kind === 'success' ? (
+            <Icon name="check" size={15} className="text-[#5fd3a0] dark:text-ok" />
+          ) : null}
+          <span className="truncate">{t.message}</span>
           {t.action && (
             <button
-              className="font-medium text-[#a8c7fa] hover:underline dark:text-[#0b57d0]"
+              className="flex h-7 items-center gap-1.5 rounded-lg px-2 font-semibold text-[#ff9a76] hover:bg-white/10 dark:text-accent dark:hover:bg-black/5"
               onClick={() => {
                 t.action!.run()
                 dismissToast(t.id)
               }}
             >
               {t.action.label}
+              {t.action.label === '실행취소' && <span className="rounded border border-current/30 px-1 text-[10.5px] opacity-70">Z</span>}
             </button>
           )}
-          <button onClick={() => dismissToast(t.id)} className="opacity-70 hover:opacity-100">
-            <Icon name="close" size={16} />
+          <button onClick={() => dismissToast(t.id)} className="flex h-7 w-7 items-center justify-center rounded-lg opacity-50 hover:bg-white/10 hover:opacity-100 dark:hover:bg-black/5">
+            <Icon name="close" size={14} />
           </button>
         </div>
       ))}
@@ -98,63 +58,89 @@ export function Toasts(): React.JSX.Element {
 
 interface Command {
   id: string
+  group: string
   label: string
+  icon?: IconName
+  mark?: React.ReactNode
+  keys?: string[]
   hint?: string
   run: () => void
 }
 
-export function CommandPalette(): React.JSX.Element {
+function match(c: Command, q: string): boolean {
+  const hay = `${c.label} ${c.hint ?? ''} ${c.group}`.toLowerCase()
+  return q.split(/\s+/).every((w) => hay.includes(w))
+}
+
+export function CommandPalette({ closing }: { closing?: boolean }): React.JSX.Element {
   const [q, setQ] = useState('')
   const [idx, setIdx] = useState(0)
   const accounts = useStore((s) => s.accounts)
   const mailboxes = useStore((s) => s.mailboxes)
   const readingPane = useStore((s) => s.readingPane)
+  const density = usePrefs((s) => s.density)
+  const unreadOnly = useStore((s) => s.unreadOnly)
+  const listRef = useRef<HTMLDivElement>(null)
   const close = (): void => useStore.setState({ paletteOpen: false })
 
   const commands = useMemo<Command[]>(() => {
-    const roles: [MailboxRole, string, string][] = [
-      ['inbox', '받은편지함으로 이동', 'g i'],
-      ['starred', '별표편지함으로 이동', 'g s'],
-      ['sent', '보낸편지함으로 이동', 'g t'],
-      ['drafts', '임시보관함으로 이동', 'g d'],
-      ['all', '전체보관함으로 이동', 'g a'],
-      ['junk', '스팸으로 이동', ''],
-      ['trash', '휴지통으로 이동', '']
+    const roles: [MailboxRole, string, IconName, string[]?][] = [
+      ['inbox', '받은편지함', 'inbox', ['G', 'I']],
+      ['starred', '별표', 'star', ['G', 'S']],
+      ['sent', '보낸편지함', 'send', ['G', 'T']],
+      ['drafts', '임시보관함', 'draft', ['G', 'D']],
+      ['all', '전체 메일', 'all', ['G', 'A']],
+      ['junk', '스팸', 'spam'],
+      ['trash', '휴지통', 'trash']
     ]
     const list: Command[] = [
-      { id: 'compose', label: '편지쓰기', hint: 'c', run: () => openCompose() },
-      ...roles.map(([role, label, hint]) => ({ id: `go-${role}`, label, hint, run: () => goRole(role) })),
-      { id: 'archive', label: '선택한 대화 보관', hint: 'e', run: () => void act({ type: 'archive' }) },
-      { id: 'trash', label: '선택한 대화 삭제', hint: '#', run: () => void act({ type: 'trash' }) },
-      { id: 'read', label: '읽음으로 표시', hint: 'Shift+I', run: () => void act({ type: 'read', value: true }, undefined, { quiet: true }) },
-      { id: 'unread', label: '읽지 않음으로 표시', hint: 'Shift+U', run: () => void act({ type: 'read', value: false }, undefined, { quiet: true }) },
-      { id: 'pane', label: readingPane ? '읽기 창 끄기' : '읽기 창 켜기', run: () => setReadingPane(!readingPane) },
-      { id: 'sync', label: '지금 동기화', run: () => void api.sync.now() },
-      { id: 'add', label: '계정 추가', run: () => useStore.setState({ addAccountOpen: true }) },
-      { id: 'settings', label: '설정 열기', run: () => useStore.setState({ settingsOpen: true }) },
-      { id: 'oauth', label: 'OAuth 클라이언트 관리', run: () => useStore.setState({ settingsOpen: true }) }
+      { id: 'compose', group: '작업', label: '새 메일 쓰기', icon: 'pencil', keys: ['C'], run: () => openCompose() },
+      { id: 'archive', group: '작업', label: '보관', icon: 'archive', keys: ['E'], run: () => void act({ type: 'archive' }) },
+      { id: 'trash', group: '작업', label: '삭제', icon: 'trash', keys: ['#'], run: () => void act({ type: 'trash' }) },
+      { id: 'read', group: '작업', label: '읽음으로 표시', icon: 'markRead', keys: ['⇧', 'I'], run: () => void act({ type: 'read', value: true }, undefined, { quiet: true }) },
+      { id: 'unread', group: '작업', label: '읽지 않음으로 표시', icon: 'markUnread', keys: ['⇧', 'U'], run: () => void act({ type: 'read', value: false }, undefined, { quiet: true }) },
+      { id: 'sync', group: '작업', label: '지금 동기화', icon: 'refresh', run: () => void api.sync.now() },
+      ...roles.map(([role, label, icon, keys]) => ({ id: `go-${role}`, group: '이동', label, icon, keys, hint: '이동', run: () => goRole(role) })),
+      { id: 'unread-only', group: '보기', label: unreadOnly ? '모든 메일 보기' : '안 읽은 메일만 보기', icon: 'markUnread' as IconName, keys: ['G', 'U'], run: () => toggleUnreadOnly() },
+      { id: 'pane', group: '보기', label: readingPane ? '읽기 창 끄기' : '읽기 창 켜기', icon: 'split' as IconName, run: () => setReadingPane(!readingPane) },
+      {
+        id: 'density',
+        group: '보기',
+        label: density === 'compact' ? '기본 밀도로 보기' : '컴팩트하게 보기',
+        icon: 'menu' as IconName,
+        run: () => setPref('density', density === 'compact' ? 'comfortable' : 'compact')
+      },
+      { id: 'settings', group: '앱', label: '설정', icon: 'settings', keys: ['⌘', ','], run: () => openSettings() },
+      { id: 'add', group: '앱', label: '계정 추가', icon: 'plus', run: () => useStore.setState({ addAccountOpen: true }) }
     ]
-    if (accounts.length > 1) list.push({ id: 'acc-all', label: '계정 전환: 모든 계정', run: () => setAccountFilter(null) })
-    for (const a of accounts) list.push({ id: `acc-${a.id}`, label: `계정 전환: ${a.email}`, run: () => setAccountFilter(a.id) })
+    if (accounts.length > 1) list.push({ id: 'acc-all', group: '계정', label: '모든 계정', icon: 'all', run: () => setAccountFilter(null) })
+    for (const a of accounts)
+      list.push({ id: `acc-${a.id}`, group: '계정', label: a.email, mark: <AccountMark id={a.id} email={a.email} color={a.color} size={16} />, run: () => setAccountFilter(a.id) })
     for (const m of mailboxes.filter((x) => x.type === 'user')) {
       const acc = accounts.find((a) => a.id === m.accountId)
       list.push({
         id: `label-${m.id}`,
-        label: `라벨: ${m.path}`,
+        group: '라벨',
+        label: m.path,
+        mark: <span className="mx-1 h-2 w-2 rounded-[3px]" style={{ background: m.colorBg ?? 'var(--ink-3)' }} />,
         hint: accounts.length > 1 ? acc?.email : undefined,
         run: () => goLabel(m.id, m.accountId)
       })
     }
     return list
-  }, [accounts, mailboxes, readingPane])
+  }, [accounts, mailboxes, readingPane, density, unreadOnly])
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase()
-    const base = s ? commands.filter((c) => c.label.toLowerCase().includes(s) || c.hint?.toLowerCase().includes(s)) : commands
-    return s ? [...base, { id: 'search', label: `"${q.trim()}" 검색`, run: () => (setSearchText(q.trim()), runSearch(q.trim(), true)) }] : base
+    const base = s ? commands.filter((c) => match(c, s)) : commands.filter((c) => c.group !== '라벨')
+    if (!s) return base
+    return [...base, { id: 'search', group: '검색', label: `"${q.trim()}" 메일 검색`, icon: 'search' as IconName, run: () => (setSearchText(q.trim()), runSearch(q.trim(), true)) }]
   }, [q, commands])
 
   useEffect(() => setIdx(0), [q])
+  useEffect(() => {
+    listRef.current?.querySelector(`[data-i="${idx}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [idx])
 
   const run = (c: Command | undefined): void => {
     if (!c) return
@@ -162,43 +148,85 @@ export function CommandPalette(): React.JSX.Element {
     c.run()
   }
 
+  let lastGroup = ''
   return (
-    <div className="fixed inset-0 z-[55] flex justify-center bg-black/30 pt-[12vh]" onMouseDown={close}>
+    <div
+      className={cx('fixed inset-0 z-[55] flex justify-center bg-black/20 pt-[14vh] dark:bg-black/40', closing ? 'animate-fade-out pointer-events-none' : 'animate-fade')}
+      onMouseDown={close}
+    >
       <div
-        className="flex h-fit max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-[#1f2329]"
+        className={cx(closing ? 'animate-pop-out' : 'animate-pop', 'flex h-fit max-h-[min(460px,64vh)] w-[600px] flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-float')}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <input
-          autoFocus
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Escape') close()
-            else if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              setIdx((i) => Math.min(filtered.length - 1, i + 1))
-            } else if (e.key === 'ArrowUp') {
-              e.preventDefault()
-              setIdx((i) => Math.max(0, i - 1))
-            } else if (e.key === 'Enter') run(filtered[idx])
-          }}
-          placeholder="명령 입력 또는 검색..."
-          className="h-14 border-b border-black/10 bg-transparent px-5 text-[15px] outline-none dark:border-white/10"
-        />
-        <div className="overflow-y-auto py-1">
-          {filtered.map((c, i) => (
-            <button
-              key={c.id}
-              onMouseEnter={() => setIdx(i)}
-              onClick={() => run(c)}
-              className={`flex w-full items-center gap-3 px-5 py-2 text-left text-[14px] ${i === idx ? 'bg-[#0b57d0]/10' : ''}`}
-            >
-              <span className="flex-1 truncate">{c.label}</span>
-              {c.hint && <span className="shrink-0 text-[12px] opacity-50">{c.hint}</span>}
-            </button>
-          ))}
-          {!filtered.length && <div className="px-5 py-4 text-[13px] opacity-50">결과 없음</div>}
+        <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-line px-4">
+          <Icon name="search" size={17} className="text-ink-3" />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Escape') close()
+              else if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'n')) {
+                e.preventDefault()
+                setIdx((i) => Math.min(filtered.length - 1, i + 1))
+              } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'p')) {
+                e.preventDefault()
+                setIdx((i) => Math.max(0, i - 1))
+              } else if (e.key === 'Enter') run(filtered[idx])
+            }}
+            placeholder="명령, 라벨, 계정을 찾거나 메일 검색"
+            className="h-full flex-1 bg-transparent text-[15px] text-ink outline-none"
+          />
+          <kbd>esc</kbd>
+        </div>
+        <div ref={listRef} className="overflow-y-auto p-1.5">
+          {filtered.map((c, i) => {
+            const header = c.group !== lastGroup
+            lastGroup = c.group
+            return (
+              <div key={c.id}>
+                {header && <div className="px-2.5 pb-1 pt-2.5 text-[11px] font-semibold tracking-wide text-ink-3">{c.group}</div>}
+                <button
+                  data-i={i}
+                  onMouseMove={() => setIdx(i)}
+                  onClick={() => run(c)}
+                  className={cx(
+                    'flex h-9 w-full items-center gap-3 rounded-lg px-2.5 text-left text-[13.5px]',
+                    i === idx ? 'bg-active text-ink' : 'text-ink-2'
+                  )}
+                >
+                  <span className={cx('flex w-4 justify-center', i === idx ? 'text-accent' : 'text-ink-3')}>
+                    {c.mark ?? (c.icon && <Icon name={c.icon} size={15} />)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{c.label}</span>
+                  {c.hint && c.group === '라벨' && <span className="truncate text-[11.5px] text-ink-3">{c.hint}</span>}
+                  {c.keys && (
+                    <span className="flex gap-1">
+                      {c.keys.map((k) => (
+                        <kbd key={k}>{k}</kbd>
+                      ))}
+                    </span>
+                  )}
+                  {i === idx && !c.keys && <Icon name="enter" size={13} className="text-ink-3" />}
+                </button>
+              </div>
+            )
+          })}
+          {!filtered.length && <div className="px-3 py-8 text-center text-[13px] text-ink-3">일치하는 항목이 없습니다</div>}
+        </div>
+        <div className="flex h-9 shrink-0 items-center gap-4 border-t border-line px-4 text-[11.5px] text-ink-3">
+          <span className="flex items-center gap-1.5">
+            <kbd>↑</kbd>
+            <kbd>↓</kbd> 이동
+          </span>
+          <span className="flex items-center gap-1.5">
+            <kbd>↵</kbd> 실행
+          </span>
+          <span className="ml-auto flex items-center gap-1.5">
+            <kbd>⌘</kbd>
+            <kbd>K</kbd> 열기/닫기
+          </span>
         </div>
       </div>
     </div>

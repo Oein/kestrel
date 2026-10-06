@@ -51,8 +51,19 @@ const api: MailApi = {
   sync: { now: c('sync.now'), statuses: c('sync.statuses') } as MailApi['sync'],
   app: {
     openExternal: c('app.openExternal'),
-    focusChanged: (focused: boolean) => ipcRenderer.send('app.focusChanged', focused)
+    focusChanged: (focused: boolean) => ipcRenderer.send('app.focusChanged', focused),
+    testNotification: c('app.testNotification')
   } as MailApi['app'],
+  settings: { get: c('settings.get'), set: c('settings.set') } as MailApi['settings'],
+  rules: {
+    list: c('rules.list'),
+    save: c('rules.save'),
+    remove: c('rules.remove'),
+    reorder: c('rules.reorder'),
+    test: c('rules.test'),
+    runNow: c('rules.runNow'),
+    samples: c('rules.samples')
+  } as MailApi['rules'],
   on<K extends keyof AppEvents>(channel: K, cb: (payload: AppEvents[K]) => void): () => void {
     const listener = (_e: unknown, payload: AppEvents[K]): void => cb(payload)
     ipcRenderer.on(`event:${channel}`, listener)

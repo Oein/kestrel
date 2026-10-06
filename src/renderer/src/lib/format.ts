@@ -62,5 +62,21 @@ export function escapeHtml(s: string): string {
 export function avatarColor(seed: string): string {
   let h = 0
   for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return `hsl(${h % 360} 55% 45%)`
+  return `hsl(${h % 360} 32% 50%)`
+}
+
+const monthFmt = new Intl.DateTimeFormat('ko-KR', { year: 'numeric', month: 'long' })
+
+/** Day bucket used for list section headers. */
+export function dayGroup(ts: number): string {
+  const d = new Date(ts)
+  const start = new Date()
+  start.setHours(0, 0, 0, 0)
+  const day = 86400_000
+  if (ts >= start.getTime()) return '오늘'
+  if (ts >= start.getTime() - day) return '어제'
+  if (ts >= start.getTime() - 6 * day) return '이번 주'
+  const now = new Date()
+  if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return '이번 달'
+  return monthFmt.format(d)
 }

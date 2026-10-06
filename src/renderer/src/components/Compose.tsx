@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Draft } from '../../../shared/types'
 import { fileSize } from '../lib/format'
 import { prepareHtml } from '../lib/sanitize'
 import { api, closeCompose, sendCompose, toast, useStore, type ComposeState } from '../store'
 import { Icon } from './Icon'
+import { confirmDialog } from './Confirm'
+import { AccountMark, btn, cx, IconButton } from './ui'
 
 function ComposeWindow({ c, index, total }: { c: ComposeState; index: number; total: number }): React.JSX.Element {
   const accounts = useStore((s) => s.accounts)
@@ -13,6 +15,8 @@ function ComposeWindow({ c, index, total }: { c: ComposeState; index: number; to
   const [showCc, setShowCc] = useState(!!(c.draft.cc || c.draft.bcc))
   const [showQuote, setShowQuote] = useState(false)
   const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const dark = matchMedia('(prefers-color-scheme: dark)').matches
+  const quoteDoc = useMemo(() => (d.quotedHtml ? prepareHtml(d.quotedHtml, false, dark).doc : ''), [d.quotedHtml, dark])
   const toRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -34,8 +38,12 @@ function ComposeWindow({ c, index, total }: { c: ComposeState; index: number; to
     sendCompose(c.key, d)
   }
 
-  const discard = (): void => {
-    if ((d.body.trim() || d.subject.trim()) && !confirm('작성 중인 메일을 삭제할까요?')) return
+  const discard = async (): Promise<void> => {
+    if (
+      (d.body.trim() || d.subject.trim()) &&
+      !(await confirmDialog({ title: '작성 중인 메일을 삭제할까요?', message: '삭제한 내용은 되돌릴 수 없습니다.', confirmLabel: '삭제', danger: true }))
+    )
+      return
     closeCompose(c.key)
   }
 
@@ -51,147 +59,156 @@ function ComposeWindow({ c, index, total }: { c: ComposeState; index: number; to
     }
   }
 
-  const right = 16 + (total - 1 - index) * 528
-  const input = 'w-full bg-transparent py-2 outline-none placeholder:opacity-50'
-  const field = 'flex items-center gap-2 border-b border-black/10 px-4 text-[14px] dark:border-white/10'
+  const right = 20 + (total - 1 - index) * 536
+  const account = accounts.find((a) => a.id === d.accountId)
+  const input = 'h-9 min-w-0 flex-1 bg-transparent text-[13.5px] text-ink outline-none'
+  const row = 'flex items-center gap-3 border-b border-line px-4'
+  const label = 'w-14 shrink-0 text-[12.5px] text-ink-3'
 
   if (minimized) {
     return (
       <div
-        className="fixed bottom-0 z-40 flex h-10 w-[280px] cursor-default items-center gap-2 rounded-t-lg bg-[#f2f6fc] px-4 shadow-lg dark:bg-[#2a2e36]"
+        className="animate-pop fixed bottom-4 z-40 flex h-10 w-[260px] items-center gap-2 rounded-xl border border-line bg-raised pl-3.5 pr-1.5 shadow-float"
         style={{ right }}
         onClick={() => setMinimized(false)}
       >
-        <span className="flex-1 truncate text-[13px] font-medium">{d.subject || c.title}</span>
-        <button onClick={(e) => (e.stopPropagation(), discard())} className="opacity-60 hover:opacity-100">
-          <Icon name="close" size={16} />
-        </button>
+        <Icon name="pencil" size={13} className="text-accent" />
+        <span className="flex-1 truncate text-[12.5px] font-medium">{d.subject || c.title}</span>
+        <IconButton icon="close" title="삭제" size="sm" onClick={discard} />
       </div>
     )
   }
 
-  const box = maximized
-    ? 'fixed inset-x-[8%] inset-y-[6%] z-50'
-    : 'fixed bottom-0 z-40 h-[560px] max-h-[calc(100vh-60px)] w-[512px]'
-
   return (
     <>
-      {maximized && <div className="fixed inset-0 z-40 bg-black/40" onClick={() => setMaximized(false)} />}
+      {maximized && <div className="animate-fade fixed inset-0 z-40 bg-black/25" onClick={() => setMaximized(false)} />}
       <div
-        className={`${box} flex flex-col overflow-hidden rounded-t-xl bg-white shadow-[0_8px_30px_rgba(0,0,0,.25)] dark:bg-[#1b1e24] ${maximized ? 'rounded-xl' : ''}`}
+        className={cx(
+          'animate-rise flex flex-col overflow-hidden rounded-2xl border border-line bg-raised shadow-float',
+          maximized ? 'fixed inset-x-[10%] inset-y-[7%] z-50' : 'fixed bottom-4 z-40 h-[580px] max-h-[calc(100vh-40px)] w-[520px]'
+        )}
         style={maximized ? undefined : { right }}
         onKeyDown={onKeyDown}
       >
-        <div className="flex h-10 shrink-0 items-center gap-1 bg-[#f2f6fc] pl-4 pr-2 dark:bg-[#2a2e36]">
-          <span className="flex-1 truncate text-[13px] font-medium">{d.subject || c.title}</span>
-          <button title="최소화" onClick={() => setMinimized(true)} className="rounded p-1 opacity-60 hover:bg-black/10 hover:opacity-100">
-            <Icon name="minimize" size={16} />
-          </button>
-          <button title="전체화면" onClick={() => setMaximized(!maximized)} className="rounded p-1 opacity-60 hover:bg-black/10 hover:opacity-100">
-            <Icon name="expand" size={16} />
-          </button>
-          <button title="닫기" onClick={discard} className="rounded p-1 opacity-60 hover:bg-black/10 hover:opacity-100">
-            <Icon name="close" size={16} />
-          </button>
+        <div className="flex h-11 shrink-0 items-center gap-1 pl-4 pr-2">
+          <span className="flex-1 truncate text-[13px] font-semibold">{d.subject || c.title}</span>
+          <IconButton icon="minimize" title="최소화 (Esc)" size="sm" onClick={() => setMinimized(true)} />
+          <IconButton icon={maximized ? 'shrink' : 'expand'} title={maximized ? '작게' : '크게'} size="sm" onClick={() => setMaximized(!maximized)} />
+          <IconButton icon="close" title="삭제" size="sm" onClick={discard} />
         </div>
+        <div className="border-t border-line" />
         {accounts.length > 1 && (
-          <div className={field}>
-            <span className="w-16 shrink-0 text-[13px] opacity-60">보낸사람</span>
-            <select value={d.accountId} onChange={(e) => upd({ accountId: e.target.value })} className={`${input} cursor-default`}>
+          <div className={row}>
+            <span className={label}>보낸사람</span>
+            {account && <AccountMark id={account.id} email={account.email} color={account.color} size={16} />}
+            <select value={d.accountId} onChange={(e) => upd({ accountId: e.target.value })} className={cx(input, '-ml-1 appearance-none')}>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name ? `${a.name} <${a.email}>` : a.email}
                 </option>
               ))}
             </select>
+            <Icon name="chevronDown" size={13} className="pointer-events-none text-ink-3" />
           </div>
         )}
-        <div className={field}>
-          <span className="w-16 shrink-0 text-[13px] opacity-60">받는사람</span>
+        <div className={row}>
+          <span className={label}>받는사람</span>
           <input ref={toRef} value={d.to} onChange={(e) => upd({ to: e.target.value })} className={input} />
           {!showCc && (
-            <button onClick={() => setShowCc(true)} className="shrink-0 text-[13px] opacity-60 hover:underline">
-              참조/숨은참조
+            <button onClick={() => setShowCc(true)} className="shrink-0 text-[12px] text-ink-3 hover:text-ink">
+              참조 · 숨은참조
             </button>
           )}
         </div>
         {showCc && (
           <>
-            <div className={field}>
-              <span className="w-16 shrink-0 text-[13px] opacity-60">참조</span>
+            <div className={row}>
+              <span className={label}>참조</span>
               <input value={d.cc} onChange={(e) => upd({ cc: e.target.value })} className={input} />
             </div>
-            <div className={field}>
-              <span className="w-16 shrink-0 text-[13px] opacity-60">숨은참조</span>
+            <div className={row}>
+              <span className={label}>숨은참조</span>
               <input value={d.bcc} onChange={(e) => upd({ bcc: e.target.value })} className={input} />
             </div>
           </>
         )}
-        <div className={field}>
-          <input value={d.subject} onChange={(e) => upd({ subject: e.target.value })} placeholder="제목" className={input} />
+        <div className={row}>
+          <input value={d.subject} onChange={(e) => upd({ subject: e.target.value })} placeholder="제목" className={cx(input, 'font-semibold')} />
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <textarea
             ref={bodyRef}
             value={d.body}
             onChange={(e) => upd({ body: e.target.value })}
-            className="min-h-[160px] flex-1 resize-none bg-transparent px-4 py-3 text-[14px] leading-relaxed outline-none"
+            placeholder="내용을 입력하세요"
+            className="min-h-[160px] flex-1 resize-none bg-transparent px-4 py-3 text-[14px] leading-[1.7] text-ink outline-none"
           />
           {d.quotedHtml && (
-            <div className="px-4 pb-3">
-              <button
-                onClick={() => setShowQuote(!showQuote)}
-                className="rounded bg-black/5 px-2 text-[13px] leading-5 opacity-70 hover:opacity-100 dark:bg-white/10"
-                title="인용된 내용 표시"
-              >
-                •••
-              </button>
-              {showQuote && (
-                <iframe
-                  title="인용"
-                  sandbox=""
-                  srcDoc={prepareHtml(d.quotedHtml, false).doc}
-                  className="mt-2 h-60 w-full rounded border border-black/10 bg-white"
+            <div className="animate-fade mx-4 mb-3 overflow-hidden rounded-xl border border-line bg-surface">
+              <div className="flex h-8 items-center gap-2 border-b border-line pl-3 pr-1 text-[12px] text-ink-2">
+                <Icon name={c.title === '전달' ? 'forward' : 'reply'} size={13} className="text-ink-3" />
+                <span className="flex-1 font-medium">{c.title === '전달' ? '전달할 메일이 포함됩니다' : '이전 메일이 함께 인용됩니다'}</span>
+                <IconButton
+                  icon={showQuote ? 'shrink' : 'expand'}
+                  title={showQuote ? '접기' : '펼쳐 보기'}
+                  size="sm"
+                  onClick={() => setShowQuote(!showQuote)}
                 />
-              )}
+                <IconButton icon="close" title="인용 빼고 보내기" size="sm" danger onClick={() => upd({ quotedHtml: null })} />
+              </div>
+              <div className="relative">
+                <iframe
+                  title="인용된 메일"
+                  sandbox=""
+                  srcDoc={quoteDoc}
+                  className={cx('block w-full border-0 bg-transparent transition-[height] duration-200', showQuote ? 'h-72' : 'h-24')}
+                />
+                {!showQuote && (
+                  <button
+                    onClick={() => setShowQuote(true)}
+                    className="absolute inset-x-0 bottom-0 flex h-10 items-end justify-center bg-gradient-to-t from-surface to-transparent pb-1.5 text-[11.5px] font-medium text-ink-3 hover:text-ink"
+                  >
+                    더 보기
+                  </button>
+                )}
+              </div>
             </div>
           )}
           {d.attachments.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-4 pb-3">
+            <div className="flex flex-wrap gap-1.5 px-4 pb-3">
               {d.attachments.map((a, i) => (
-                <span key={a.path} className="flex items-center gap-2 rounded bg-black/5 px-2 py-1 text-[12px] dark:bg-white/10">
-                  <span className="max-w-[200px] truncate font-medium text-[#0b57d0] dark:text-[#a8c7fa]">{a.filename}</span>
-                  <span className="opacity-60">({fileSize(a.size)})</span>
-                  <button onClick={() => upd({ attachments: d.attachments.filter((_, j) => j !== i) })} className="opacity-60 hover:opacity-100">
-                    <Icon name="close" size={14} />
+                <span key={a.path} className="flex h-7 items-center gap-1.5 rounded-lg border border-line bg-surface pl-2 pr-1 text-[12px]">
+                  <Icon name="attach" size={12} className="text-ink-3" />
+                  <span className="max-w-[180px] truncate font-medium">{a.filename}</span>
+                  <span className="tnum text-ink-3">{fileSize(a.size)}</span>
+                  <button
+                    onClick={() => upd({ attachments: d.attachments.filter((_, j) => j !== i) })}
+                    className="flex h-5 w-5 items-center justify-center rounded text-ink-3 hover:bg-hover hover:text-ink"
+                  >
+                    <Icon name="close" size={12} />
                   </button>
                 </span>
               ))}
             </div>
           )}
         </div>
-        <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-          <button
-            onClick={send}
-            className="rounded-full bg-[#0b57d0] px-6 py-2 text-[14px] font-medium text-white hover:bg-[#0a4ebb] hover:shadow"
-            title="보내기 (⌘Enter)"
-          >
+        <div className="flex h-14 shrink-0 items-center gap-1 border-t border-line px-3">
+          <button onClick={send} className={cx(btn.primary, 'gap-2 pl-3.5 pr-3')} title="보내기 (⌘↵)">
+            <Icon name="send" size={13} stroke={2} />
             보내기
+            <span className="text-[11px] font-medium opacity-60">⌘↵</span>
           </button>
-          <button
+          <IconButton
+            icon="attach"
             title="파일 첨부"
+            className="ml-1"
             onClick={async () => {
               const files = await api.compose.pickFiles()
               if (files.length) upd({ attachments: [...d.attachments, ...files] })
             }}
-            className="rounded-full p-2 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
-          >
-            <Icon name="attach" />
-          </button>
-          <span className="flex-1 text-right text-[11px] opacity-40">⌘Enter 보내기 · 5초 내 실행취소 가능</span>
-          <button title="삭제" onClick={discard} className="rounded-full p-2 opacity-70 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10">
-            <Icon name="trash" />
-          </button>
+          />
+          <span className="flex-1 text-right text-[11px] text-ink-3">보낸 후 5초 동안 취소할 수 있습니다</span>
+          <IconButton icon="trash" title="삭제" danger onClick={discard} />
         </div>
       </div>
     </>

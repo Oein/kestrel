@@ -98,6 +98,24 @@ export const migrations: { version: number; up: string }[] = [
       ALTER TABLE accounts ADD COLUMN needs_reauth INTEGER NOT NULL DEFAULT 0;
       CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `
+  },
+  {
+    version: 3,
+    up: `
+      CREATE TABLE rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        language TEXT NOT NULL,
+        code TEXT NOT NULL DEFAULT '',
+        account_id TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+        sort INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        last_error TEXT,
+        last_run_at INTEGER,
+        hit_count INTEGER NOT NULL DEFAULT 0
+      );
+    `
   }
 ]
 

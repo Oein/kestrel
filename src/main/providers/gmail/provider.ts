@@ -95,6 +95,30 @@ export class GmailApiProvider implements MailProvider {
     this.repo.replaceMailboxes(this.accountId, list)
   }
 
+  /** Rules: label id for a (full) label name, creating a user label when missing. */
+  async ensureLabel(name: string): Promise<string> {
+    const find = (): string | undefined => {
+      const lower = name.toLowerCase()
+      return this.repo.mailboxInfos(this.accountId).find((m) => m.type === 'user' && m.path.toLowerCase() === lower)?.id
+    }
+    const have = find()
+    if (have) return have
+    try {
+      const created = await this.api.request<GmailLabel>('POST', '/gmail/v1/users/me/labels', {
+        body: { name, labelListVisibility: 'labelShow', messageListVisibility: 'show' }
+      })
+      await this.syncFolders()
+      return find() ?? mailboxId(this.accountId, created.id)
+    } catch (e) {
+      // 409: created meanwhile (e.g. in another client) → refresh and look again
+      if (!(e instanceof GmailHttpError && e.status === 409)) throw e
+      await this.syncFolders()
+      const id = find()
+      if (!id) throw e
+      return id
+    }
+  }
+
   // ---------- sync ----------
   async sync(): Promise<SyncOutcome> {
     const state = this.repo.getAccountSync<AccountSyncState>(this.accountId)

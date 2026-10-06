@@ -229,7 +229,24 @@ export class ImapProvider implements MailProvider {
       seen.add(m.role)
       return true
     })
-    this.repo.replaceMailboxes(this.accountId, unique)
+    this.repo.replaceMailboxes(this.accountId, unique, { keepCategories: true })
+  }
+
+  /** Rules: folder for a label name (created on the server when missing). Returns the local mailbox id. */
+  async ensureLabel(name: string): Promise<string> {
+    const find = (): string | undefined => {
+      const lower = name.toLowerCase()
+      const mbs = this.repo.mailboxInfos(this.accountId).filter((m) => m.type !== 'category')
+      return (mbs.find((m) => m.path.toLowerCase() === lower) ?? mbs.find((m) => m.remote_id.toLowerCase() === lower))?.id
+    }
+    const have = find()
+    if (have) return have
+    const c = await this.conn()
+    await c.mailboxCreate(name.split('/').filter(Boolean))
+    await this.syncFolders()
+    const id = find()
+    if (!id) throw new Error(`폴더를 만들지 못했습니다: ${name}`)
+    return id
   }
 
   private syncedMailboxes(): { id: string; remote_id: string; role: string | null }[] {
@@ -289,7 +306,7 @@ export class ImapProvider implements MailProvider {
         if (box.uidNext > (st.uidNext ?? 0)) {
           const msgs = (await this.fetchEnvelopes(c, `${st.uidNext}:*`, true)).filter((m) => m.uid >= (st.uidNext ?? 0))
           const ids = this.store(mbId, path, msgs)
-          newIds = ids.filter((_, i) => !msgs[i].flags?.has('\\Seen'))
+          newIds = ids
           if (!oldestUid && msgs.length) oldestUid = Math.min(...msgs.map((m) => m.uid))
           await this.fillSnippets(c, path, msgs)
         }
@@ -384,7 +401,7 @@ export class ImapProvider implements MailProvider {
         mailboxIds: [mbId]
       }
     })
-    return this.repo.upsertMessages(this.accountId, upserts)
+    return this.repo.upsertMessages(this.accountId, upserts, { keepLocalCategories: true })
   }
 
   /** Fetch the first ~1KB of the text part of each message to build list snippets. */
@@ -555,8 +572,10 @@ export class ImapProvider implements MailProvider {
           const { uid } = parseRemoteId(ch.ref.remoteId)
           if (ch.before.isRead !== ch.after.isRead) add('\\Seen', ch.after.isRead, uid)
           if (ch.before.isStarred !== ch.after.isStarred) add('\\Flagged', ch.after.isStarred, uid)
-          const dest = ch.after.labels[0]
-          if (dest && dest !== ch.before.labels[0]) {
+          // category labels are local-only; the folder is the first other label
+          const folder = (labels: string[]): string | undefined => labels.find((l) => !strip(l).startsWith('CATEGORY_'))
+          const dest = folder(ch.after.labels)
+          if (dest && dest !== folder(ch.before.labels)) {
             const p = strip(dest)
             moves.set(p, [...(moves.get(p) ?? []), ch])
           }

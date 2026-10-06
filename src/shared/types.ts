@@ -136,10 +136,14 @@ export interface MessageBody {
   attachments: AttachmentInfo[]
 }
 
-export type View =
+export type View = (
   | { kind: 'role'; role: MailboxRole; accountId: string | null; category?: InboxCategory }
   | { kind: 'label'; mailboxId: string; accountId: string }
   | { kind: 'search'; query: string; accountId: string | null; token?: string }
+) & {
+  /** only conversations with at least one unread message */
+  unreadOnly?: boolean
+}
 
 export type MailAction =
   | { type: 'read'; value: boolean }
@@ -221,6 +225,116 @@ export interface AppEvents {
   'search:updated': { token: string }
   'op:reverted': { opId: string; reason: string }
   'compose:restore': Draft
+  /** ⌘, (app menu) or the tray asks the renderer to open settings, optionally at a tab id (e.g. 'general', 'rules') */
+  'app:openSettings': { tab?: string }
+  /** tray / app menu "새 메일" */
+  'app:compose': Record<string, never>
+  'settings:changed': AppSettings
+  /** rule list/stats changed (saved, removed, run finished) */
+  'rules:changed': Record<string, never>
+}
+
+// ---------- app settings ----------
+export interface AppSettings {
+  /** 새 메일 알림 */
+  notifications: boolean
+  /** 로그인 시 자동 실행 (only takes effect in a packaged/signed build) */
+  launchAtLogin: boolean
+  /** 창을 닫으면 메뉴바에 남기기 (tray icon + keep syncing); off = closing the window quits */
+  keepInMenuBar: boolean
+}
+
+// ---------- auto-categorization rules ----------
+export type RuleLanguage = 'js' | 'python'
+
+export interface Rule {
+  id: string
+  name: string
+  enabled: boolean
+  language: RuleLanguage
+  code: string
+  /** null = all accounts */
+  accountId: string | null
+  sort: number
+  createdAt: number
+  lastError: string | null
+  lastRunAt: number | null
+  hitCount: number
+}
+
+export interface RuleInput {
+  id?: string // present when editing
+  name: string
+  enabled: boolean
+  language: RuleLanguage
+  code: string
+  accountId: string | null
+}
+
+/** The JSON object a rule receives. */
+export interface RuleMessage {
+  id: number
+  account: { id: string; email: string; provider: ProviderKind }
+  from: Address
+  to: Address[]
+  cc: Address[]
+  subject: string
+  snippet: string
+  /** plain-text body when it is cached locally, else null */
+  text: string | null
+  date: number
+  /** user label / folder names (full path) and system labels in upper case (INBOX, STARRED, IMPORTANT, ...) */
+  labels: string[]
+  category: InboxCategory | null
+  unread: boolean
+  starred: boolean
+  hasAttachments: boolean
+  attachments: { filename: string; mimeType: string; size: number }[]
+}
+
+/** What a rule returns (null / {} = no-op). */
+export interface RuleResult {
+  addLabels?: string[]
+  removeLabels?: string[]
+  category?: InboxCategory
+  archive?: boolean
+  markRead?: boolean
+  star?: boolean
+  trash?: boolean
+}
+
+export interface RuleTestRequest {
+  /** test a saved rule ... */
+  ruleId?: string
+  /** ... or unsaved code from the editor */
+  language?: RuleLanguage
+  code?: string
+  /** message to test against; default = most recent inbox message */
+  messageId?: number
+}
+
+export interface RuleTestResult {
+  message: RuleMessage | null
+  result: RuleResult | null
+  error: string | null
+  /** console.log / print output */
+  logs: string[]
+  ms: number
+}
+
+export interface RuleRunSummary {
+  processed: number
+  /** messages whose state changed */
+  changed: number
+  errors: string[]
+}
+
+export interface RuleSampleMessage {
+  id: number
+  accountId: string
+  subject: string
+  from: Address
+  date: number
 }
 
 export interface MailApi {
@@ -274,6 +388,25 @@ export interface MailApi {
   app: {
     openExternal(url: string): Promise<void>
     focusChanged(focused: boolean): void
+    /** show a sample new-mail notification (ignores focus / the notifications setting) */
+    testNotification(): Promise<void>
+  }
+  settings: {
+    get(): Promise<AppSettings>
+    set(patch: Partial<AppSettings>): Promise<AppSettings>
+  }
+  rules: {
+    list(): Promise<Rule[]>
+    save(input: RuleInput): Promise<Rule>
+    remove(id: string): Promise<void>
+    /** full ordered list of rule ids */
+    reorder(ids: string[]): Promise<void>
+    /** run a rule (saved or draft code) on one message without applying anything */
+    test(req: RuleTestRequest): Promise<RuleTestResult>
+    /** apply enabled rules (or just `ruleId`) to the latest 500 inbox messages */
+    runNow(ruleId?: string): Promise<RuleRunSummary>
+    /** recent inbox messages to pick a test message from */
+    samples(limit?: number): Promise<RuleSampleMessage[]>
   }
   on<K extends keyof AppEvents>(channel: K, cb: (payload: AppEvents[K]) => void): () => void
 }

@@ -14,7 +14,7 @@ export interface FetchedBody extends MessageBody {
 }
 
 export interface SyncOutcome {
-  /** local ids of messages that newly arrived in the inbox (for notifications) */
+  /** local ids of messages that newly arrived in the inbox (read or unread; for rules and notifications) */
   newInboxIds: number[]
   changed: boolean
 }
@@ -47,6 +47,8 @@ export interface MailProvider {
   send(raw: Buffer, draft: Draft, envelope: SendEnvelope): Promise<void>
   /** server-side search; returns local ids (messages are stored locally as needed) */
   search(query: string): Promise<number[]>
+  /** rules: local mailbox id for a user label / folder name, creating it on the server when missing */
+  ensureLabel(name: string): Promise<string>
   /** start realtime watching; callback triggers an incremental sync */
   watch(onChange: () => void): void
 }

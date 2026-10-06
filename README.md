@@ -74,6 +74,40 @@ GOOGLE_CLIENT_DOMAINS_SCHOOL=school.ac.kr   # 쉼표로 구분, 이 도메인 �
 
 계정 추가 → 기타에서 서버 주소/포트/보안 방식을 직접 입력합니다. 저장 전에 연결 테스트를 수행합니다.
 
+## 메뉴바 · 알림 · 로그인 시 자동 실행
+
+- **메뉴바 아이콘**: 메뉴바에 봉투 아이콘과 읽지 않은 메일 수가 표시됩니다. 메뉴: 열기 / 새 메일 / 지금 동기화 / 로그인 시 자동 실행 / 설정… / 종료.
+- **창을 닫으면 메뉴바에 남기기**(기본 켬): 창을 닫아도 앱이 메뉴바에 남아 계속 동기화하고 알림을 보냅니다. Dock 아이콘이나 메뉴바의 "열기"로 다시 엽니다. `⌘Q`나 메뉴바의 "종료"는 실제로 종료합니다(대기 중인 작업은 서버에 반영한 뒤 종료). 끄면 창을 닫을 때 앱이 종료됩니다.
+- **새 메일 알림**(기본 켬): 앱이 켜진 뒤 받은편지함에 새로 도착한 읽지 않은 메일만 알립니다(계정 첫 동기화·앱 시작 시 따라잡기 분량은 알리지 않음). 한 번에 4통 이상이면 "새 메일 N통" 요약 알림 하나로 묶습니다. 알림을 클릭하면 해당 대화가 열립니다. 창을 보고 있을 때와 자동 분류 규칙이 보관·읽음·삭제 처리한 메일은 알리지 않습니다. 설정 → 일반의 "테스트 알림 보내기"로 확인할 수 있습니다.
+- **로그인 시 자동 실행**(기본 끔): 켜면 Mac 로그인 시 창 없이 메뉴바에서 시작합니다. 로그인 항목은 **패키징된(가능하면 서명된) 앱**에서만 등록됩니다. `pnpm dev`에서는 설정값만 저장됩니다.
+- `⌘,` 설정, `⌘N` 새 메일.
+
+## 자동 분류 규칙 (JavaScript / Python)
+
+설정 → **자동 분류**에서 규칙을 만듭니다. 켜 둔 규칙은 새 메일이 받은편지함에 도착할 때마다(알림보다 먼저) 위에서부터 차례로 실행되며, 뒤 규칙은 앞 규칙이 바꾼 결과(라벨·분류·읽음·별표)를 봅니다. "지금 받은편지함에 적용"은 최근 받은편지함 메일 500통에 적용하고, "테스트"는 선택한 메일로 실행해 결과 JSON만 보여 줍니다(메일은 바뀌지 않음).
+
+규칙은 메일 하나를 다음 JSON으로 받습니다.
+
+```js
+{ id, account: { id, email, provider }, from: { name, email }, to: [...], cc: [...],
+  subject, snippet, text /* 본문이 캐시돼 있으면 문자열, 아니면 null */, date /* ms */,
+  labels: ['INBOX', 'company/github', ...] /* 사용자 라벨·폴더는 전체 경로, 시스템 라벨은 대문자 */,
+  category: 'primary' | 'promotions' | 'social' | 'updates', unread, starred, hasAttachments,
+  attachments: [{ filename, mimeType, size }] }
+```
+
+그리고 다음 객체(또는 아무것도 하지 않으려면 `null`)를 반환합니다.
+
+```js
+{ addLabels: ['라벨'], removeLabels: ['라벨'], category: 'promotions', archive: true, markRead: true, star: true, trash: true }
+```
+
+- **JavaScript**: `function rule(msg) { ... }`, `export default (msg) => ...`, 또는 함수 본문만(`msg`를 쓰고 `return`) 작성할 수 있습니다. 별도 프로세스(Electron utilityProcess)의 `node:vm` 샌드박스에서 실행되며 `require`·`process`·`fs`·네트워크에 접근할 수 없고, 메일 한 통당 200ms 제한이 있습니다. 동기 함수만 지원합니다. `console.log` 출력은 테스트 결과에 표시됩니다.
+- **Python**: `def rule(msg): ...`를 정의합니다. `python3`(Homebrew `/opt/homebrew/bin`, `/usr/local/bin`, PATH, `/usr/bin` 순으로 찾음, `MAILBIRD_PYTHON`으로 지정 가능)로 실행되며 메일 한 통당 0.5초 제한이 있습니다. Python 규칙은 샌드박스가 아니므로 본인이 작성한 코드만 사용하세요. `print` 출력은 테스트 결과에 표시됩니다.
+- **Gmail**: 라벨은 Gmail 라벨이며 없으면 새로 만듭니다. `category`는 `CATEGORY_*` 라벨을 바꿉니다(`primary` = 기본).
+- **IMAP(iCloud·네이버 등)**: `addLabels`의 **첫 번째** 이름의 폴더로 메일을 **이동**합니다(없으면 만듦). `removeLabels`는 무시됩니다. `category`는 이 앱에만 저장되어 받은편지함 분류 탭(프로모션·소셜·업데이트)에 쓰입니다. 우선순위는 `trash` > `addLabels` > `archive`입니다.
+- 오류가 나도 동기화는 계속되며, 규칙별 마지막 오류·적용 횟수·마지막 실행 시각이 표시됩니다.
+
 ## 단축키
 
 | 키 | 동작 |
@@ -92,10 +126,14 @@ GOOGLE_CLIENT_DOMAINS_SCHOOL=school.ac.kr   # 쉼표로 구분, 이 도메인 �
 | `z` | 실행취소 |
 | `g` `i`/`s`/`t`/`d`/`a` | 받은편지함 / 별표 / 보낸편지함 / 임시보관함 / 전체보관함 |
 | `⌘Enter` | (편지쓰기 창) 보내기 |
+| `⌘,` | 설정 |
+| `⌘N` | 새 메일 |
 
 검색창은 `from:`, `to:`, `subject:`, `is:unread`, `is:starred`, `has:attachment`를 지원합니다. 로컬 결과가 먼저 표시되고 서버 검색 결과가 이어서 합쳐집니다.
 
 ## 개발 참고
 
 - `MAILBIRD_USER_DATA=/tmp/mb pnpm dev` 로 별도 프로필(빈 DB)로 실행할 수 있습니다.
+- `MAILBIRD_DEMO=1 pnpm dev` 는 가짜 메일이 채워진 별도 프로필(`Mailbird-demo`)로 실행합니다. 동기화가 꺼져 있고 서버 반영은 로컬에만 적용되며, 보낸 메일은 로컬 보낸편지함에 저장됩니다.
+- JavaScript 규칙 워커는 `out/main/ruleWorker.js`(`src/main/rules/jsWorker.ts`)로 따로 빌드됩니다.
 - 구조: `src/main`(SQLite, 동기화, 제공자), `src/preload`(타입이 지정된 `window.api` 브리지), `src/renderer`(React UI), `src/shared`(공용 타입).

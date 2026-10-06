@@ -1,13 +1,93 @@
 @import 'tailwindcss';
 
-@theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
-  --color-accent: #0b57d0;
-  --color-accent-soft: #d3e3fd;
-  --color-canvas: #f6f8fc;
-  --color-canvas-dark: #111317;
-  --color-panel-dark: #1b1e24;
-  --color-line-dark: #2a2e36;
+@font-face {
+  font-family: 'Pretendard Variable';
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: block;
+  src: url('../../../node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2') format('woff2-variations');
+}
+
+/*
+ * Mailbird design tokens. Warm neutrals + one "ember" accent.
+ * Components only use these semantic colors (bg-surface, text-ink-2, border-line, ...), never raw hex.
+ */
+:root {
+  --bg: #fbfaf8;
+  --sidebar: rgba(239, 236, 230, 0.78);
+  --surface: #ffffff;
+  --raised: #ffffff;
+  --ink: #1b1a17;
+  --ink-2: #5f5b53;
+  --ink-3: #9b968c;
+  --line: #ebe8e1;
+  --line-strong: #dcd8cf;
+  --hover: rgba(40, 34, 20, 0.045);
+  --active: rgba(40, 34, 20, 0.075);
+  --accent: #d2583a;
+  --accent-hover: #c04b2f;
+  --accent-soft: rgba(210, 88, 58, 0.1);
+  --accent-ink: #ffffff;
+  --star: #f0a423;
+  --danger: #d33a2c;
+  --ok: #2f9e6b;
+  --warn: #c9850e;
+  --shadow: 0 1px 2px rgba(30, 25, 15, 0.06), 0 8px 24px rgba(30, 25, 15, 0.08);
+  --shadow-lg: 0 2px 6px rgba(30, 25, 15, 0.08), 0 24px 64px rgba(30, 25, 15, 0.18);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181715;
+    --sidebar: rgba(30, 29, 27, 0.72);
+    --surface: #1e1d1b;
+    --raised: #262522;
+    --ink: #eeece7;
+    --ink-2: #a9a59c;
+    --ink-3: #6f6b64;
+    --line: #2b2a27;
+    --line-strong: #3a3935;
+    --hover: rgba(255, 250, 240, 0.045);
+    --active: rgba(255, 250, 240, 0.08);
+    --accent: #cf6b4c;
+    --accent-hover: #da785a;
+    --accent-soft: rgba(225, 120, 88, 0.15);
+    --accent-ink: #fff8f4;
+    --star: #f5b53d;
+    --danger: #ff6b5e;
+    --ok: #45c08a;
+    --warn: #e8a530;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 64px rgba(0, 0, 0, 0.55);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: 'Pretendard Variable', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-hover: var(--hover);
+  --color-active: var(--active);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-star: var(--star);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --shadow-pop: var(--shadow);
+  --shadow-float: var(--shadow-lg);
 }
 
 @custom-variant dark (@media (prefers-color-scheme: dark));
@@ -20,20 +100,20 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-canvas);
-  color: #1f1f1f;
+  /* transparent so the macOS sidebar vibrancy shows through; panels paint their own background */
+  background: transparent;
+  color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 13.5px;
+  letter-spacing: -0.006em;
+  font-feature-settings: 'ss06', 'tnum' 0;
   -webkit-font-smoothing: antialiased;
   user-select: none;
   overflow: hidden;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background: var(--color-canvas-dark);
-    color: #e3e3e3;
-  }
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 .drag {
@@ -47,16 +127,22 @@ body {
   user-select: text;
 }
 
-/* thin scrollbars */
+::selection {
+  background: var(--accent-soft);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(127, 127, 127, 0.35);
+  background: transparent;
   border-radius: 8px;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   background-clip: padding-box;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background-color: var(--line-strong);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -68,16 +154,212 @@ select,
 button {
   font: inherit;
   color: inherit;
+  letter-spacing: inherit;
 }
 
 button {
   cursor: default;
 }
 
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-3);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
 kbd {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-family: var(--font-sans);
   font-size: 11px;
-  padding: 1px 5px;
-  border-radius: 4px;
-  border: 1px solid rgba(127, 127, 127, 0.35);
+  font-weight: 500;
+  color: var(--ink-3);
+  background: var(--hover);
+  border: 1px solid var(--line);
+}
+
+/* ---------- motion ----------
+ * Short, transform/opacity-only animations so the UI feels alive without ever waiting on them.
+ */
+:root {
+  --ease-out: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+}
+@keyframes pop-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+@keyframes sink-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@keyframes slide-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+@keyframes drawer-out {
+  to {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+}
+@keyframes star-pop {
+  40% {
+    transform: scale(1.35) rotate(-8deg);
+  }
+}
+@keyframes shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+@keyframes new-row {
+  from {
+    background-color: var(--accent-soft);
+  }
+}
+
+.animate-pop {
+  animation: pop-in 160ms var(--ease-out) both;
+}
+.animate-pop-out {
+  animation: pop-out 120ms var(--ease-in) both;
+}
+.animate-fade {
+  animation: fade-in 140ms ease-out both;
+}
+.animate-fade-out {
+  animation: fade-out 120ms ease-in both;
+}
+.animate-rise {
+  animation: rise-in 220ms var(--ease-spring) both;
+}
+.animate-sink {
+  animation: sink-out 140ms var(--ease-in) both;
+}
+.animate-slide-right {
+  animation: slide-in-right 180ms var(--ease-out) both;
+}
+.animate-slide-up {
+  animation: slide-in-up 200ms var(--ease-out) both;
+}
+.animate-scale-in {
+  animation: scale-in 160ms var(--ease-spring) both;
+}
+.animate-drawer-in {
+  animation: drawer-in 200ms var(--ease-out) both;
+}
+.animate-drawer-out {
+  animation: drawer-out 150ms var(--ease-in) both;
+}
+.animate-star {
+  animation: star-pop 320ms var(--ease-spring);
+}
+.animate-new-row {
+  animation: new-row 1.6s ease-out;
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--hover) 25%, var(--active) 50%, var(--hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+/* staggered children (thread messages, settings rows) */
+.stagger > * {
+  animation: slide-in-up 220ms var(--ease-out) both;
+}
+.stagger > *:nth-child(2) {
+  animation-delay: 25ms;
+}
+.stagger > *:nth-child(3) {
+  animation-delay: 50ms;
+}
+.stagger > *:nth-child(4) {
+  animation-delay: 75ms;
+}
+.stagger > *:nth-child(n + 5) {
+  animation-delay: 100ms;
+}
+/* pressed feedback on every button */
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+button {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: 120ms;
+  transition-timing-function: var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
 }

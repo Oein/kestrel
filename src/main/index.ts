@@ -1,14 +1,28 @@
 import { app, BrowserWindow, ipcMain, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import type { AppEvents } from '../shared/types'
+import { buildAppMenu, TrayController, type ShellActions } from './appShell'
 import { Repo } from './db/repo'
+import { seedDemo } from './demo'
 import { registerIpc } from './ipc'
 import { MailService } from './mail'
+import { Notifier } from './notify'
 import { OAuthClientService } from './oauthClients'
+import { RuleEngine } from './rules/engine'
+import { JsRunner } from './rules/jsRunner'
+import { PythonRunner } from './rules/python'
+import { launchedAtLogin, SettingsService } from './settings'
 
 let mainWindow: BrowserWindow | null = null
 let repo: Repo | null = null
 let mail: MailService | null = null
+let settings: SettingsService | null = null
+let tray: TrayController | null = null
+let jsRunner: JsRunner | null = null
+/** set once a real quit starts (⌘Q, tray 종료, OS shutdown) so window close stops hiding */
+let quitting = false
+/** start hidden in the menu bar (launched by the login item) */
+let startHidden = false
 
 function emit<K extends keyof AppEvents>(channel: K, payload: AppEvents[K]): void {
   for (const w of BrowserWindow.getAllWindows()) {
@@ -20,17 +34,36 @@ function isSafeExternal(url: string): boolean {
   return /^(https?:|mailto:)/i.test(url)
 }
 
-function createWindow(): void {
+function showWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow(true)
+  const w = mainWindow!
+  if (w.isMinimized()) w.restore()
+  w.show()
+  w.focus()
+  if (process.platform === 'darwin') app.focus({ steal: true })
+}
+
+const isMac = process.platform === 'darwin'
+
+function createWindow(show = true): void {
   mainWindow = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 760,
+    // MAILBIRD_WINDOW=WxH (dev only) to check responsive layouts
+    width: (!app.isPackaged && Number(process.env.MAILBIRD_WINDOW?.split('x')[0])) || 1360,
+    height: (!app.isPackaged && Number(process.env.MAILBIRD_WINDOW?.split('x')[1])) || 860,
+    minWidth: 560,
     minHeight: 480,
     show: false,
     title: 'Mailbird',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 14, y: 16 },
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#111317' : '#f6f8fc',
+    // macOS: translucent sidebar (the renderer body is transparent); elsewhere an opaque background
+    ...(isMac
+      ? {
+          vibrancy: 'sidebar' as const,
+          visualEffectState: 'followWindow' as const,
+          backgroundColor: '#00000000',
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 18, y: 19 }
+        }
+      : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#181715' : '#fbfaf8' }),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -39,8 +72,21 @@ function createWindow(): void {
       spellcheck: true
     }
   })
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  if (show) mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.on('focus', () => mail?.onFocus())
+  mainWindow.on('close', (e) => {
+    if (quitting) return
+    if (settings?.get().keepInMenuBar) {
+      // keep running (and syncing) in the menu bar
+      e.preventDefault()
+      if (mainWindow?.isFullScreen()) {
+        mainWindow.once('leave-full-screen', () => mainWindow?.hide())
+        mainWindow.setFullScreen(false)
+      } else mainWindow?.hide()
+    } else {
+      setImmediate(() => app.quit())
+    }
+  })
   mainWindow.on('closed', () => (mainWindow = null))
 
   // never navigate the app window; open links in the system browser
@@ -79,6 +125,9 @@ function createWindow(): void {
             mainWindow?.webContents.sendInputEvent({ type: 'keyUp', keyCode: key })
             await new Promise((r) => setTimeout(r, 400))
           }
+          // MAILBIRD_SCREENSHOT_MOUSE="x,y" hovers a point (CSS px) before capturing, e.g. to check tooltips
+          const mouse = process.env.MAILBIRD_SCREENSHOT_MOUSE?.split(',').map(Number)
+          if (mouse?.length === 2) mainWindow?.webContents.sendInputEvent({ type: 'mouseMove', x: mouse[0], y: mouse[1] })
           await new Promise((r) => setTimeout(r, 1000))
           const img = await mainWindow?.webContents.capturePage()
           if (img) (await import('fs')).writeFileSync(shot, img.toPNG())
@@ -96,19 +145,19 @@ function createWindow(): void {
 }
 
 app.setName('Mailbird')
+// notifications are attributed to this id (Windows); on macOS the bundle name is used
+if (process.platform === 'win32') app.setAppUserModelId('kr.oein.mailbird')
 // dev/testing: isolate the profile (e.g. MAILBIRD_USER_DATA=/tmp/mb pnpm dev)
 if (!app.isPackaged && process.env.MAILBIRD_USER_DATA) app.setPath('userData', process.env.MAILBIRD_USER_DATA)
+// dev/design: `MAILBIRD_DEMO=1 pnpm dev` opens a separate profile filled with fake mail, with syncing off
+const demo = !app.isPackaged && !!process.env.MAILBIRD_DEMO
+if (demo && !process.env.MAILBIRD_USER_DATA) app.setPath('userData', join(app.getPath('appData'), 'Mailbird-demo'))
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.focus()
-    }
-  })
+  app.on('second-instance', () => showWindow())
 
   app.whenReady().then(() => {
     const dbPath = join(app.getPath('userData'), 'mailbird.sqlite')
@@ -119,22 +168,65 @@ if (!gotLock) {
     } catch (e) {
       console.warn('[oauth] .env import failed', (e as Error).message)
     }
-    mail = new MailService(repo, oauth, emit, () => mainWindow)
-    registerIpc(ipcMain, repo, mail, oauth)
-    createWindow()
-    mail.start()
+    if (demo) seedDemo(repo)
+    const r = repo
+    const m = (mail = new MailService(r, oauth, emit, () => mainWindow, demo))
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) createWindow()
-      else mainWindow?.show()
+    const actions: ShellActions = {
+      show: showWindow,
+      compose: () => {
+        showWindow()
+        emit('app:compose', {})
+      },
+      syncNow: () => m.syncAll(),
+      openSettings: (tab) => {
+        showWindow()
+        emit('app:openSettings', tab ? { tab } : {})
+      },
+      quit: () => app.quit(),
+      launchAtLogin: () => settings?.get().launchAtLogin ?? false,
+      setLaunchAtLogin: (on) => settings?.set({ launchAtLogin: on })
+    }
+    tray = new TrayController(actions)
+    settings = new SettingsService(r, (st) => {
+      tray?.setVisible(st.keepInMenuBar)
+      tray?.refresh()
+      emit('settings:changed', st)
     })
+    buildAppMenu(actions)
+
+    const notifier = new Notifier(r, () => settings?.get().notifications ?? true, () => mainWindow, showWindow, emit)
+    jsRunner = new JsRunner()
+    const rules = new RuleEngine(r, {
+      js: jsRunner,
+      python: new PythonRunner(join(app.getPath('userData'), 'rules')),
+      ensureLabel: (accountId, name) => m.ensureLabel(accountId, name),
+      commit: (changes) => m.commitRuleChanges(changes),
+      emit
+    })
+    m.rules = rules
+    m.notifier = notifier
+    m.onUnreadCount = (n) => tray?.setUnread(n)
+
+    registerIpc(ipcMain, r, m, oauth, { settings, rules, notifier })
+    tray.setVisible(settings.get().keepInMenuBar)
+    // launched by the login item: stay in the menu bar (unless there is no tray to get back in)
+    startHidden = launchedAtLogin() && settings.get().keepInMenuBar
+    createWindow(!startHidden)
+    m.updateBadge()
+    if (!demo) m.start()
+
+    app.on('activate', () => showWindow())
   })
 
-  let quitting = false
+  let flushed = false
   app.on('before-quit', (e) => {
-    if (quitting || !mail) return
-    e.preventDefault()
     quitting = true
+    if (flushed || !mail) return
+    e.preventDefault()
+    flushed = true
+    jsRunner?.dispose()
+    tray?.destroy()
     // commit delayed (undo-able) actions and sends before quitting
     void mail.stop().finally(() => {
       repo?.close()

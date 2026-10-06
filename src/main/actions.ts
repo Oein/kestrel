@@ -1,6 +1,6 @@
 import type { MailAction, ProviderKind } from '../shared/types'
 import type { MessageState, Repo } from './db/repo'
-import { mailboxId } from './db/repo'
+import { isCategoryLabel, mailboxId } from './db/repo'
 
 export class ActionError extends Error {}
 
@@ -22,10 +22,10 @@ export function computeAfter(
   const trash = ctx.roleId('trash')
   const junk = ctx.roleId('junk')
   const gmail = ctx.kind === 'gmail'
-  /** IMAP: a message lives in exactly one folder */
+  /** IMAP: a message lives in exactly one folder (+ local-only category labels, which are kept) */
   const moveTo = (target: string | null, missing: string): void => {
     if (!target) throw new ActionError(missing)
-    next.labels = [target]
+    next.labels = [target, ...next.labels.filter((l) => isCategoryLabel(ctx.accountId, l))]
   }
 
   switch (action.type) {
@@ -52,7 +52,11 @@ export function computeAfter(
       } else moveTo(inbox, '받은편지함을 찾을 수 없습니다.')
       break
     case 'trash':
-      if (gmail) add(trash)
+      // Gmail drops SPAM when a message is trashed; mirror it so the spam view updates instantly
+      if (gmail) {
+        add(trash)
+        remove(junk)
+      }
       else if (!has(trash)) moveTo(trash, '이 계정에는 휴지통 폴더가 없습니다.')
       break
     case 'untrash':
@@ -99,7 +103,7 @@ export function expandTargets(repo: Repo, repIds: number[], action: MailAction, 
     const thread = repo.threadMessageIds(id)
     const isMove = !['read', 'star', 'label'].includes(action.type)
     if (account?.provider === 'imap' && isMove) {
-      const repLabels = new Set(repo.states([id])[0]?.labels ?? [])
+      const repLabels = new Set((repo.states([id])[0]?.labels ?? []).filter((l) => !isCategoryLabel(ref.accountId, l)))
       for (const st of repo.states(thread)) if (st.labels.some((l) => repLabels.has(l))) out.add(st.id)
     } else if (action.type === 'star') {
       // unstar: every starred message of the conversation

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { AttachmentInfo, MessageBody, MessageMeta } from '../../../shared/types'
-import { avatarColor, displayName, fileSize, formatAddr, initials, longDate, relative } from '../lib/format'
+import { displayName, fileSize, formatAddr, longDate, relative } from '../lib/format'
 import { linkify, prepareHtml } from '../lib/sanitize'
 import { act, api, cachedBody, fetchBody, onBodies, openThread, reply, threadListeners, toast, useStore } from '../store'
 import { Icon } from './Icon'
+import { useLayout } from '../lib/layout'
+import { setRegion } from '../lib/selection'
+import { AccountMark, Avatar, cx, IconButton, LabelChip } from './ui'
 
 function useBody(id: number, enabled: boolean): { body: MessageBody | undefined; error: string | null } {
   const [, force] = useState(0)
@@ -18,10 +21,9 @@ function useBody(id: number, enabled: boolean): { body: MessageBody | undefined;
 }
 
 /** Sandboxed iframe (no scripts) that auto-sizes to its content. */
-function HtmlFrame({ html, allowRemote }: { html: string; allowRemote: boolean }): React.JSX.Element {
+function HtmlFrame({ doc }: { doc: string }): React.JSX.Element {
   const ref = useRef<HTMLIFrameElement>(null)
   const [height, setHeight] = useState(80)
-  const { doc } = useMemo(() => prepareHtml(html, allowRemote), [html, allowRemote])
 
   const onLoad = useCallback(() => {
     const f = ref.current
@@ -50,8 +52,11 @@ function HtmlFrame({ html, allowRemote }: { html: string; allowRemote: boolean }
       const href = a.getAttribute('href') ?? ''
       if (/^(https?:|mailto:)/i.test(href)) void api.app.openExternal(href)
     })
-    // forward keyboard shortcuts to the app while the frame has focus
+    d.addEventListener('mousedown', () => setRegion('thread'))
+    // forward keyboard shortcuts to the app while the frame has focus; ⌘A/⌘C stay native (select/copy the mail text)
     d.addEventListener('keydown', (e) => {
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && !['Backspace', 'Delete', 'k', 'K', ',', '1', '2', '3', '4', '5', '6', '7', '8', '9'].includes(e.key)) return
       window.dispatchEvent(new KeyboardEvent('keydown', e))
     })
   }, [])
@@ -64,41 +69,55 @@ function HtmlFrame({ html, allowRemote }: { html: string; allowRemote: boolean }
       srcDoc={doc}
       onLoad={onLoad}
       style={{ height }}
-      className="w-full rounded-md border-0 bg-white"
+      className="block w-full border-0 bg-transparent"
     />
   )
+}
+
+
+function useDark(): boolean {
+  const [dark, setDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const mq = matchMedia('(prefers-color-scheme: dark)')
+    const on = (): void => setDark(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return dark
 }
 
 function Attachments({ messageId, list }: { messageId: number; list: AttachmentInfo[] }): React.JSX.Element | null {
   const visible = list.filter((a) => !a.inline)
   if (!visible.length) return null
   return (
-    <div className="mt-4 border-t border-black/5 pt-3 dark:border-white/10">
-      <div className="mb-2 text-xs font-medium opacity-60">첨부파일 {visible.length}개</div>
+    <div className="mt-5">
+      <div className="mb-2 text-[11.5px] font-semibold tracking-wide text-ink-3">첨부파일 {visible.length}개</div>
       <div className="flex flex-wrap gap-2">
-        {visible.map((a) => (
-          <div
-            key={a.id}
-            className="group flex w-[220px] items-center gap-2 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10"
-          >
-            <Icon name={a.mimeType.startsWith('image/') ? 'image' : 'attach'} size={18} className="opacity-60" />
-            <button
-              className="min-w-0 flex-1 text-left"
-              title="열기"
-              onClick={() => api.attachments.open(messageId, a.id).catch((e: Error) => toast('error', e.message))}
-            >
-              <div className="truncate text-[13px]">{a.filename}</div>
-              <div className="text-[11px] opacity-50">{fileSize(a.size)}</div>
-            </button>
-            <button
-              title="다운로드"
-              className="rounded-full p-1 opacity-60 hover:bg-black/10 hover:opacity-100 dark:hover:bg-white/10"
-              onClick={() => api.attachments.save(messageId, a.id).catch((e: Error) => toast('error', e.message))}
-            >
-              <Icon name="download" size={16} />
-            </button>
-          </div>
-        ))}
+        {visible.map((a) => {
+          const ext = (a.filename.split('.').pop() ?? '').slice(0, 4).toUpperCase()
+          return (
+            <div key={a.id} className="group flex w-[232px] items-center gap-2.5 rounded-lg border border-line bg-surface p-2 pr-1.5 transition-colors hover:border-line-strong">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-hover text-[9.5px] font-bold tracking-wide text-ink-2">
+                {a.mimeType.startsWith('image/') ? <Icon name="image" size={15} /> : ext || <Icon name="attach" size={15} />}
+              </span>
+              <button
+                className="min-w-0 flex-1 text-left"
+                title={`열기 — ${a.filename}`}
+                onClick={() => api.attachments.open(messageId, a.id).catch((e: Error) => toast('error', e.message))}
+              >
+                <div className="truncate text-[12.5px] font-medium text-ink">{a.filename}</div>
+                <div className="tnum text-[11px] text-ink-3">{fileSize(a.size)}</div>
+              </button>
+              <IconButton
+                icon="download"
+                title="다운로드"
+                size="sm"
+                className="opacity-0 group-hover:opacity-100"
+                onClick={() => void api.attachments.save(messageId, a.id).catch((e: Error) => toast('error', e.message))}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -107,67 +126,96 @@ function Attachments({ messageId, list }: { messageId: number; list: AttachmentI
 function MessageCard({ m, expanded, onToggle, isLast }: { m: MessageMeta; expanded: boolean; onToggle: () => void; isLast: boolean }): React.JSX.Element {
   const { body, error } = useBody(m.id, expanded)
   const [allowRemote, setAllowRemote] = useState(false)
+  const [original, setOriginal] = useState(false)
+  const dark = useDark()
   const accounts = useStore((s) => s.accounts)
   const me = accounts.find((a) => a.id === m.accountId)
-  const hasRemote = useMemo(() => (body?.html ? prepareHtml(body.html, false).hasRemote : false), [body?.html])
+  const prepared = useMemo(
+    () => (body?.html ? prepareHtml(body.html, allowRemote, dark && !original) : null),
+    [body?.html, allowRemote, dark, original]
+  )
 
   if (!expanded) {
     return (
-      <button onClick={onToggle} className="flex w-full items-center gap-3 border-b border-black/5 px-5 py-3 text-left hover:bg-black/[.02] dark:border-white/5 dark:hover:bg-white/[.03]">
-        <Avatar m={m} />
-        <span className={`w-40 shrink-0 truncate ${m.unread ? 'font-bold' : 'font-medium'}`}>{displayName(m.from)}</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] opacity-60">{m.snippet}</span>
-        <span className="shrink-0 text-xs opacity-60">{relative(m.date)}</span>
+      <button onClick={onToggle} className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-hover">
+        <Avatar addr={m.from} size={26} />
+        <span className={cx('w-36 shrink-0 truncate text-[13px]', m.unread ? 'font-semibold text-ink' : 'font-medium text-ink-2')}>{displayName(m.from)}</span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-3">{m.snippet}</span>
+        <span className="tnum shrink-0 text-[11.5px] text-ink-3">{relative(m.date)}</span>
       </button>
     )
   }
 
   const recipients = [...m.to, ...m.cc]
+  const paper = prepared?.mode === 'paper' || (dark && original && !!prepared)
   return (
-    <div className={`px-5 py-4 ${isLast ? '' : 'border-b border-black/5 dark:border-white/5'}`}>
-      <div className="flex items-start gap-3">
-        <Avatar m={m} />
+    <article className={cx('animate-fade px-3 py-4', !isLast && 'border-b border-line')}>
+      <header className="flex items-start gap-3">
+        <Avatar addr={m.from} size={34} />
         <div className="min-w-0 flex-1 cursor-default" onClick={isLast ? undefined : onToggle}>
           <div className="flex items-baseline gap-2">
-            <span className="truncate font-semibold">{displayName(m.from)}</span>
-            {m.from.name && <span className="truncate text-xs opacity-60">&lt;{m.from.email}&gt;</span>}
+            <span className="truncate text-[13.5px] font-semibold text-ink">{displayName(m.from)}</span>
+            {m.from.name && <span className="selectable truncate text-[12px] text-ink-3">{m.from.email}</span>}
           </div>
-          <div className="truncate text-xs opacity-60" title={recipients.map(formatAddr).join(', ')}>
-            받는사람: {recipients.length ? recipients.map((a) => (a.email === me?.email ? '나' : displayName(a))).join(', ') : '(없음)'}
+          <div className="mt-0.5 truncate text-[12px] text-ink-3" title={recipients.map(formatAddr).join(', ')}>
+            받는사람 {recipients.length ? recipients.map((a) => (a.email === me?.email ? '나' : displayName(a))).join(', ') : '나'}
           </div>
         </div>
-        <span className="shrink-0 pt-0.5 text-xs opacity-60" title={longDate(m.date)}>
-          {longDate(m.date)}
+        <span className="tnum shrink-0 pt-0.5 text-[11.5px] text-ink-3" title={longDate(m.date)}>
+          {relative(m.date)}
         </span>
-        <div className="flex shrink-0 items-center">
-          <IconBtn icon={m.starred ? 'starFilled' : 'star'} title="별표" className={m.starred ? 'text-amber-400 opacity-100' : ''} onClick={() => act({ type: 'star', value: !m.starred }, [m.id], { quiet: true })} />
-          <IconBtn icon="reply" title="답장 (r)" onClick={() => reply(m, 'reply')} />
+        <div className="-mr-1 -mt-0.5 flex shrink-0 items-center">
+          <IconButton
+            icon={m.starred ? 'starFilled' : 'star'}
+            title="별표 (S)"
+            size="sm"
+            iconClassName={m.starred ? 'text-star' : ''}
+            onClick={() => void act({ type: 'star', value: !m.starred }, [m.id], { quiet: true })}
+          />
+          <IconButton icon="reply" title="답장 (R)" size="sm" onClick={() => reply(m, 'reply')} />
         </div>
-      </div>
+      </header>
 
-      <div className="selectable mt-3 pl-[52px]">
-        {hasRemote && !allowRemote && (
-          <div className="mb-3 flex items-center gap-3 rounded-md bg-black/[.04] px-3 py-2 text-[13px] dark:bg-white/[.06]">
-            <Icon name="image" size={16} className="opacity-60" />
-            <span className="flex-1 opacity-80">개인정보 보호를 위해 외부 이미지가 차단되었습니다.</span>
-            <button className="font-medium text-[#0b57d0] hover:underline dark:text-[#a8c7fa]" onClick={() => setAllowRemote(true)}>
-              이미지 표시
-            </button>
+      <div className="selectable mt-4 pl-[46px]">
+        {(prepared?.hasRemote && !allowRemote) || (dark && prepared && (prepared.mode === 'adapted' || original)) ? (
+          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink-3">
+            {prepared?.hasRemote && !allowRemote && (
+              <span className="flex h-8 items-center gap-2 rounded-lg border border-line bg-surface pl-2.5 pr-1 text-ink-2">
+                <Icon name="image" size={14} className="text-ink-3" />
+                외부 이미지가 차단되었습니다
+                <button
+                  className="ml-1 flex h-6 items-center gap-1 rounded-md bg-accent-soft px-2 text-[12px] font-semibold text-accent hover:bg-accent hover:text-accent-ink"
+                  onClick={() => setAllowRemote(true)}
+                  title="이 메일의 외부 이미지를 불러옵니다. 발신자가 열람 여부를 알 수 있습니다."
+                >
+                  이미지 표시
+                </button>
+              </span>
+            )}
+            {dark && prepared && (prepared.mode === 'adapted' || original) && (
+              <button className="ml-auto flex items-center gap-1 hover:text-ink-2" onClick={() => setOriginal(!original)} title="메일 원래 색상으로 보기">
+                <Icon name="image" size={12} />
+                {original ? '다크 모드로 보기' : '원본 색상'}
+              </button>
+            )}
           </div>
-        )}
+        ) : null}
         {error ? (
-          <div className="text-[13px] text-red-500">본문을 불러오지 못했습니다: {error}</div>
+          <div className="rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] text-danger">본문을 불러오지 못했습니다: {error}</div>
         ) : !body ? (
-          <div className="space-y-2 py-2">
-            <div className="h-3 w-3/4 animate-pulse rounded bg-black/10 dark:bg-white/10" />
-            <div className="h-3 w-2/3 animate-pulse rounded bg-black/10 dark:bg-white/10" />
-            <div className="text-[13px] opacity-60">{m.snippet}</div>
+          <div className="space-y-2.5 py-1">
+            <div className="skeleton h-2.5 w-3/4 rounded" />
+            <div className="skeleton h-2.5 w-2/3 rounded" />
+            <div className="skeleton h-2.5 w-1/2 rounded" />
           </div>
-        ) : body.html ? (
-          <HtmlFrame html={body.html} allowRemote={allowRemote} />
+        ) : prepared ? (
+          <div data-mail-body className={cx('animate-fade', paper && 'overflow-hidden rounded-xl bg-white shadow-[0_0_0_1px_var(--line)]', paper && dark && 'brightness-[.94]')}>
+            <HtmlFrame doc={prepared.doc} />
+          </div>
         ) : (
           <div
-            className="whitespace-pre-wrap break-words text-[14px] leading-relaxed [&_a]:text-[#0b57d0] dark:[&_a]:text-[#a8c7fa]"
+            data-mail-body
+            className="animate-fade whitespace-pre-wrap break-words text-[14px] leading-[1.7] text-ink [&_a]:text-accent"
             onClick={(e) => {
               const a = (e.target as Element).closest('a')
               if (a) {
@@ -180,40 +228,14 @@ function MessageCard({ m, expanded, onToggle, isLast }: { m: MessageMeta; expand
         )}
         <Attachments messageId={m.id} list={body?.attachments ?? m.attachments} />
       </div>
-    </div>
-  )
-}
-
-function Avatar({ m }: { m: MessageMeta }): React.JSX.Element {
-  return (
-    <span
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-medium text-white"
-      style={{ background: avatarColor(m.from.email) }}
-    >
-      {initials(m.from)}
-    </span>
-  )
-}
-
-function IconBtn(props: { icon: Parameters<typeof Icon>[0]['name']; title: string; onClick: () => void; className?: string }): React.JSX.Element {
-  return (
-    <button
-      title={props.title}
-      onClick={(e) => {
-        e.stopPropagation()
-        props.onClick()
-      }}
-      className={`rounded-full p-2 opacity-60 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10 ${props.className ?? ''}`}
-    >
-      <Icon name={props.icon} size={19} />
-    </button>
+    </article>
   )
 }
 
 export function ThreadView({ id }: { id: number }): React.JSX.Element {
   const [messages, setMessages] = useState<MessageMeta[] | null>(null)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
-  const readingPane = useStore((s) => s.readingPane)
+  const split = useLayout((s) => s.split)
   const mailboxes = useStore((s) => s.mailboxes)
   const accounts = useStore((s) => s.accounts)
   const view = useStore((s) => s.view)
@@ -224,7 +246,7 @@ export function ThreadView({ id }: { id: number }): React.JSX.Element {
       const list = await api.messages.thread(id)
       setMessages(list)
       if (initial) {
-        // expand the latest + unread messages (Gmail-like)
+        // expand the latest + unread messages
         const ex = new Set<number>()
         list.forEach((m, i) => {
           if (i === list.length - 1 || m.unread) ex.add(m.id)
@@ -266,74 +288,67 @@ export function ThreadView({ id }: { id: number }): React.JSX.Element {
     }
   }, [last])
 
-  if (!messages) {
-    return <div className="h-full" />
-  }
-  if (!messages.length) {
-    return <div className="flex h-full items-center justify-center opacity-50">메시지를 찾을 수 없습니다.</div>
-  }
+  if (!messages) return <div className="h-full" />
+  if (!messages.length) return <div className="flex h-full items-center justify-center text-[13px] text-ink-3">메시지를 찾을 수 없습니다</div>
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-1 px-3">
-        {!readingPane && <IconBtn icon="back" title="목록으로 (u)" onClick={() => openThread(null)} />}
+    <div data-region="thread" className="flex h-full min-w-0 flex-col">
+      <div className="drag flex h-[52px] shrink-0 items-center gap-0.5 px-3">
+        {!split && <IconButton icon="back" title="목록으로 (U)" onClick={() => openThread(null)} />}
         {inTrash ? (
-          <IconBtn icon="restore" title="휴지통에서 복원" onClick={() => act({ type: 'untrash' }, [id])} />
+          <IconButton icon="restore" title="복원" onClick={() => void act({ type: 'untrash' }, [id])} />
         ) : (
           <>
-            <IconBtn icon="archive" title="보관 (e)" onClick={() => act({ type: 'archive' }, [id])} />
-            <IconBtn icon="trash" title="삭제 (#)" onClick={() => act({ type: 'trash' }, [id])} />
+            <IconButton icon="archive" title="보관 (E)" onClick={() => void act({ type: 'archive' }, [id])} />
+            <IconButton icon="trash" title="삭제 (#)" danger onClick={() => void act({ type: 'trash' }, [id])} />
           </>
         )}
-        <IconBtn icon="markUnread" title="읽지 않음으로 표시 (Shift+U)" onClick={() => {
-          void act({ type: 'read', value: false }, [id], { quiet: true })
-          openThread(null)
-        }} />
+        <IconButton
+          icon="markUnread"
+          title="읽지 않음으로 표시 (⇧U)"
+          onClick={() => {
+            void act({ type: 'read', value: false }, [id], { quiet: true })
+            openThread(null)
+          }}
+        />
         <div className="flex-1" />
-        {readingPane && <IconBtn icon="close" title="닫기 (Esc)" onClick={() => openThread(null)} />}
+        {account && accounts.length > 1 && (
+          <span className="mr-1 flex items-center gap-1.5 rounded-md px-2 py-1 text-[11.5px] text-ink-3" title={account.email}>
+            <AccountMark id={account.id} email={account.email} color={account.color} size={14} />
+            {account.email}
+          </span>
+        )}
+        {split && <IconButton icon="close" title="닫기 (Esc)" onClick={() => openThread(null)} />}
       </div>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex items-start gap-3 px-5 pb-3 pl-[72px] pt-2">
-          <h1 className="selectable min-w-0 flex-1 text-[22px] font-normal leading-snug">{last?.subject || '(제목 없음)'}</h1>
-          {account && (
-            <span className="mt-2 flex shrink-0 items-center gap-1.5 text-xs opacity-60" title={account.email}>
-              <span className="h-2 w-2 rounded-full" style={{ background: account.color }} />
-              {account.email}
-            </span>
-          )}
-        </div>
-        {labels.length > 0 && (
-          <div className="-mt-1 flex flex-wrap gap-1.5 px-5 pb-3 pl-[72px]">
+        <div key={id} className="animate-slide-right mx-auto max-w-[860px] px-6 pb-10">
+          <h1 className="selectable pb-2 pt-3 text-[21px] font-semibold leading-[1.35] tracking-[-0.02em] text-ink">
+            {last?.subject || '(제목 없음)'}
+          </h1>
+          <div className="flex flex-wrap items-center gap-1.5 pb-3">
+            {messages.length > 1 && <span className="tnum mr-1 text-[12px] text-ink-3">메시지 {messages.length}개</span>}
             {labels.map((l) => (
-              <span key={l.id} className="rounded px-1.5 py-px text-[11px]" style={{ background: l.colorBg ?? 'rgba(127,127,127,.18)', color: l.colorText ?? undefined }}>
-                {l.name}
-              </span>
+              <LabelChip key={l.id} name={l.name} color={l.colorBg} />
             ))}
           </div>
-        )}
-        <div className="mx-2 mb-4 rounded-xl bg-white dark:bg-[#1b1e24]">
-          {messages.map((m, i) => (
-            <MessageCard
-              key={m.id}
-              m={m}
-              isLast={i === messages.length - 1}
-              expanded={expanded.has(m.id)}
-              onToggle={() => {
-                const ex = new Set(expanded)
-                if (ex.has(m.id)) ex.delete(m.id)
-                else ex.add(m.id)
-                setExpanded(ex)
-              }}
-            />
-          ))}
-        </div>
-        {last && (
-          <div className="flex gap-2 px-5 pb-8 pl-[72px]">
-            <ReplyButton icon="reply" label="답장" onClick={() => reply(last, 'reply')} />
-            {last.to.length + last.cc.length > 1 && <ReplyButton icon="replyAll" label="전체답장" onClick={() => reply(last, 'replyAll')} />}
-            <ReplyButton icon="forward" label="전달" onClick={() => reply(last, 'forward')} />
+          <div className="-mx-3">
+            {messages.map((m, i) => (
+              <MessageCard
+                key={m.id}
+                m={m}
+                isLast={i === messages.length - 1}
+                expanded={expanded.has(m.id)}
+                onToggle={() => {
+                  const ex = new Set(expanded)
+                  if (ex.has(m.id)) ex.delete(m.id)
+                  else ex.add(m.id)
+                  setExpanded(ex)
+                }}
+              />
+            ))}
           </div>
-        )}
+          {last && <QuickReply last={last} />}
+        </div>
       </div>
     </div>
   )
@@ -341,11 +356,32 @@ export function ThreadView({ id }: { id: number }): React.JSX.Element {
 
 export let currentThreadLast: MessageMeta | null = null
 
-function ReplyButton({ icon, label, onClick }: { icon: 'reply' | 'replyAll' | 'forward'; label: string; onClick: () => void }): React.JSX.Element {
-  return (
-    <button onClick={onClick} className="flex items-center gap-2 rounded-full border border-black/20 px-5 py-2 text-[13px] font-medium hover:bg-black/5 dark:border-white/20 dark:hover:bg-white/5">
-      <Icon name={icon} size={18} />
+function QuickReply({ last }: { last: MessageMeta }): React.JSX.Element {
+  const many = last.to.length + last.cc.length > 1
+  const action = (label: string, k: string, mode: 'reply' | 'replyAll' | 'forward', icon: 'reply' | 'replyAll' | 'forward'): React.JSX.Element => (
+    <button
+      onClick={() => reply(last, mode)}
+      className="flex h-8 items-center gap-2 rounded-lg px-2.5 text-[12.5px] font-medium text-ink-2 transition-colors hover:bg-hover hover:text-ink"
+    >
+      <Icon name={icon} size={14} />
       {label}
+      <kbd>{k}</kbd>
     </button>
+  )
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-surface p-1.5 shadow-[0_1px_2px_rgba(0,0,0,.03)]">
+      <button
+        onClick={() => reply(last, 'reply')}
+        className="flex h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] text-ink-3 hover:bg-hover"
+      >
+        <Icon name="reply" size={15} />
+        {displayName(last.from)}님에게 답장…
+      </button>
+      <div className="mt-1 flex items-center gap-0.5 border-t border-line px-1 pt-1.5">
+        {action('답장', 'R', 'reply', 'reply')}
+        {many && action('전체답장', 'A', 'replyAll', 'replyAll')}
+        {action('전달', 'F', 'forward', 'forward')}
+      </div>
+    </div>
   )
 }
