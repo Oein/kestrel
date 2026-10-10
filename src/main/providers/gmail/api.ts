@@ -128,7 +128,7 @@ export class GmailApi {
   }
 
   private async batchOnce(requests: BatchRequest[]): Promise<BatchResponse[]> {
-    const boundary = `mailbird_${randomBytes(8).toString('hex')}`
+    const boundary = `kestrel_${randomBytes(8).toString('hex')}`
     for (let attempt = 0; ; attempt++) {
       const token = await this.token()
       const res = await fetch(BATCH_URL, {

@@ -377,8 +377,8 @@ function SearchField(): React.JSX.Element {
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const focus = (): void => ref.current?.focus()
-    window.addEventListener('mailbird:focus-search', focus)
-    return () => window.removeEventListener('mailbird:focus-search', focus)
+    window.addEventListener('kestrel:focus-search', focus)
+    return () => window.removeEventListener('kestrel:focus-search', focus)
   }, [])
   const account = accounts.find((a) => a.id === filter)
   return (

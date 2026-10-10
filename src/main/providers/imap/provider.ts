@@ -59,7 +59,7 @@ function client(cfg: ImapConfig, password: string): ImapFlow {
     greetingTimeout: 15_000,
     socketTimeout: 5 * 60_000,
     qresync: true,
-    clientInfo: { name: 'Mailbird', version: '0.1.0' }
+    clientInfo: { name: 'Kestrel', version: '0.1.0' }
   })
 }
 

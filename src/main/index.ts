@@ -47,13 +47,13 @@ const isMac = process.platform === 'darwin'
 
 function createWindow(show = true): void {
   mainWindow = new BrowserWindow({
-    // MAILBIRD_WINDOW=WxH (dev only) to check responsive layouts
-    width: (!app.isPackaged && Number(process.env.MAILBIRD_WINDOW?.split('x')[0])) || 1360,
-    height: (!app.isPackaged && Number(process.env.MAILBIRD_WINDOW?.split('x')[1])) || 860,
+    // KESTREL_WINDOW=WxH (dev only) to check responsive layouts
+    width: (!app.isPackaged && Number(process.env.KESTREL_WINDOW?.split('x')[0])) || 1360,
+    height: (!app.isPackaged && Number(process.env.KESTREL_WINDOW?.split('x')[1])) || 860,
     minWidth: 560,
     minHeight: 480,
     show: false,
-    title: 'Mailbird',
+    title: 'Kestrel',
     // macOS: translucent sidebar (the renderer body is transparent); elsewhere an opaque background
     ...(isMac
       ? {
@@ -115,18 +115,18 @@ function createWindow(show = true): void {
     })
     mainWindow.webContents.on('render-process-gone', (_e, d) => console.log('[renderer] gone', d.reason))
     mainWindow.webContents.on('did-fail-load', (_e, code, desc) => console.log('[renderer] failed to load', code, desc))
-    const shot = process.env.MAILBIRD_SCREENSHOT
+    const shot = process.env.KESTREL_SCREENSHOT
     if (shot) {
       mainWindow.webContents.once('did-finish-load', () => {
         setTimeout(async () => {
-          for (const key of (process.env.MAILBIRD_SCREENSHOT_KEYS ?? '').split(',').filter(Boolean)) {
+          for (const key of (process.env.KESTREL_SCREENSHOT_KEYS ?? '').split(',').filter(Boolean)) {
             mainWindow?.webContents.sendInputEvent({ type: 'keyDown', keyCode: key })
             mainWindow?.webContents.sendInputEvent({ type: 'char', keyCode: key })
             mainWindow?.webContents.sendInputEvent({ type: 'keyUp', keyCode: key })
             await new Promise((r) => setTimeout(r, 400))
           }
-          // MAILBIRD_SCREENSHOT_MOUSE="x,y" hovers a point (CSS px) before capturing, e.g. to check tooltips
-          const mouse = process.env.MAILBIRD_SCREENSHOT_MOUSE?.split(',').map(Number)
+          // KESTREL_SCREENSHOT_MOUSE="x,y" hovers a point (CSS px) before capturing, e.g. to check tooltips
+          const mouse = process.env.KESTREL_SCREENSHOT_MOUSE?.split(',').map(Number)
           if (mouse?.length === 2) mainWindow?.webContents.sendInputEvent({ type: 'mouseMove', x: mouse[0], y: mouse[1] })
           await new Promise((r) => setTimeout(r, 1000))
           const img = await mainWindow?.webContents.capturePage()
@@ -144,14 +144,14 @@ function createWindow(show = true): void {
   }
 }
 
-app.setName('Mailbird')
+app.setName('Kestrel')
 // notifications are attributed to this id (Windows); on macOS the bundle name is used
-if (process.platform === 'win32') app.setAppUserModelId('kr.oein.mailbird')
-// dev/testing: isolate the profile (e.g. MAILBIRD_USER_DATA=/tmp/mb pnpm dev)
-if (!app.isPackaged && process.env.MAILBIRD_USER_DATA) app.setPath('userData', process.env.MAILBIRD_USER_DATA)
-// dev/design: `MAILBIRD_DEMO=1 pnpm dev` opens a separate profile filled with fake mail, with syncing off
-const demo = !app.isPackaged && !!process.env.MAILBIRD_DEMO
-if (demo && !process.env.MAILBIRD_USER_DATA) app.setPath('userData', join(app.getPath('appData'), 'Mailbird-demo'))
+if (process.platform === 'win32') app.setAppUserModelId('kr.oein.kestrel')
+// dev/testing: isolate the profile (e.g. KESTREL_USER_DATA=/tmp/mb pnpm dev)
+if (!app.isPackaged && process.env.KESTREL_USER_DATA) app.setPath('userData', process.env.KESTREL_USER_DATA)
+// dev/design: `KESTREL_DEMO=1 pnpm dev` opens a separate profile filled with fake mail, with syncing off
+const demo = !app.isPackaged && !!process.env.KESTREL_DEMO
+if (demo && !process.env.KESTREL_USER_DATA) app.setPath('userData', join(app.getPath('appData'), 'Kestrel-demo'))
 
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
@@ -160,7 +160,9 @@ if (!gotLock) {
   app.on('second-instance', () => showWindow())
 
   app.whenReady().then(() => {
-    const dbPath = join(app.getPath('userData'), 'mailbird.sqlite')
+    // packaged builds get the icon from the bundle; in dev the dock would show Electron's
+    if (!app.isPackaged) app.dock?.setIcon(join(app.getAppPath(), 'resources', 'icon.png'))
+    const dbPath = join(app.getPath('userData'), 'kestrel.sqlite')
     repo = new Repo(dbPath)
     const oauth = new OAuthClientService(repo)
     try {

@@ -1,5 +1,5 @@
 // Dev-only demo profile: fills an empty database with realistic fake mail so the UI can be
-// designed and screenshotted without real accounts. Enabled with MAILBIRD_DEMO=1 (never in packaged builds).
+// designed and screenshotted without real accounts. Enabled with KESTREL_DEMO=1 (never in packaged builds).
 import type { Address } from '../shared/types'
 import { mailboxId, type MailboxUpsert, type MessageUpsert, type Repo } from './db/repo'
 
@@ -55,18 +55,18 @@ const N = 'demo-naver'
 const a = (name: string, email: string): Address => ({ name, email })
 
 const SEEDS: Seed[] = [
-  { acc: P, from: a('GitHub', 'noreply@github.com'), subject: '[minji/mailbird] PR #12: 읽기 창 렌더링 최적화', snippet: 'minji requested your review on this pull request. 변경된 파일 7개, +214 −88', hoursAgo: 0.2, labels: ['L_github'] },
+  { acc: P, from: a('GitHub', 'noreply@github.com'), subject: '[minji/kestrel] PR #12: 읽기 창 렌더링 최적화', snippet: 'minji requested your review on this pull request. 변경된 파일 7개, +214 −88', hoursAgo: 0.2, labels: ['L_github'] },
   { acc: S, from: a('이수진 선생님', 'teacher.lee@school.example.kr'), subject: '정보과학 수행평가 제출 안내 (10/10 마감)', snippet: '안녕하세요. 이번 수행평가는 팀 프로젝트 보고서와 발표 자료를 함께 제출합니다. 제출 형식은 PDF이며', hoursAgo: 0.5, labels: ['L_class'], files: [['수행평가_안내.pdf', 'application/pdf', 482_000]] },
   { acc: P, from: a('Google', 'no-reply@accounts.google.com'), subject: '보안 알림: Mac에서 새로 로그인함', snippet: 'minji.kim@example.com 계정에 새로운 로그인이 감지되었습니다. 본인이 맞다면 아무 조치도 필요하지 않습니다.', hoursAgo: 1.3, star: true, labels: ['L_google'] },
   { acc: N, from: a('네이버페이', 'pay@navercorp.com'), subject: '결제가 완료되었습니다 — 무신사 스토어', snippet: '주문번호 2026100612345 · 결제금액 54,900원 · 배송 예정일 10월 8일(수)', hoursAgo: 2.1, read: true },
   { acc: P, from: a('K-ICT 빅데이터센터', 'dcc@kbig.kr'), subject: '[DCC 필독] 예선 기간 주요 안내사항 및 제출 일정 안내', snippet: '안녕하세요. K-ICT 빅데이터센터입니다. 8월부터 시작된 데이터AI 크리에이터 캠프 예선 일정이 곧 마감됩니다.', hoursAgo: 4, labels: ['L_contest'], files: [['예선_제출양식.hwp', 'application/x-hwp', 120_000], ['일정표.pdf', 'application/pdf', 230_000]] },
   { acc: S, from: a('로봇공학 동아리', 'robotics@school.example.kr'), subject: '이번 주 금요일 정기 모임 장소 변경', snippet: '과학관 2층 로봇실 → 본관 3층 세미나실로 변경되었습니다. 노트북 꼭 챙겨 오세요!', hoursAgo: 5, read: true, labels: ['L_club'] },
-  { acc: P, from: a('Vercel', 'notifications@vercel.com'), subject: 'Deployment ready: mailbird-site', snippet: 'Your deployment to production is live. Build time 38s · 3 functions · Edge network', hoursAgo: 7, read: true, cat: 'CATEGORY_UPDATES' },
+  { acc: P, from: a('Vercel', 'notifications@vercel.com'), subject: 'Deployment ready: kestrel-site', snippet: 'Your deployment to production is live. Build time 38s · 3 functions · Edge network', hoursAgo: 7, read: true, cat: 'CATEGORY_UPDATES' },
   { acc: P, from: a('OpenBadge', 'badge@openbadge.or.kr'), subject: '(주)케이티, (주)한국경제신문에서 오픈 배지 수여 안내', snippet: '김민지 님, AICE Basic 배지가 발급되었습니다. 배지 지갑에서 확인하고 공유해 보세요.', hoursAgo: 26, read: true },
   { acc: N, from: a('토스', 'no-reply@toss.im'), subject: '이번 달 소비 리포트가 도착했어요', snippet: '9월에는 지난달보다 12% 덜 썼어요. 가장 많이 쓴 곳은 편의점이에요.', hoursAgo: 28, read: true, cat: 'CATEGORY_UPDATES' },
   { acc: P, from: a('이도윤', 'doyoon.lee@gmail.com'), subject: 'Re: 해커톤 팀 구성 관련', snippet: '좋아요! 그럼 프론트는 제가 맡고 백엔드는 성현 님이 맡는 걸로 할게요. 회의는 목요일 저녁 어때요?', hoursAgo: 30, thread: 3 },
   { acc: S, from: a('교무기획부', 'office@school.example.kr'), subject: '[공지] 2학기 중간고사 시간표', snippet: '2학기 중간고사 시간표를 안내합니다. 첨부파일을 확인해 주시기 바랍니다.', hoursAgo: 32, star: true, files: [['중간고사_시간표.xlsx', 'application/vnd.ms-excel', 41_000]] },
-  { acc: P, from: a('Figma', 'no-reply@figma.com'), subject: '서진 님이 "Mailbird UI v2"에 댓글을 남겼습니다', snippet: '"사이드바 너비를 조금 줄이면 목록이 훨씬 시원해 보일 것 같아요."', hoursAgo: 50, read: true, cat: 'CATEGORY_SOCIAL' },
+  { acc: P, from: a('Figma', 'no-reply@figma.com'), subject: '서진 님이 "Kestrel UI v2"에 댓글을 남겼습니다', snippet: '"사이드바 너비를 조금 줄이면 목록이 훨씬 시원해 보일 것 같아요."', hoursAgo: 50, read: true, cat: 'CATEGORY_SOCIAL' },
   { acc: P, from: a('29CM', 'news@29cm.co.kr'), subject: '🍂 가을 아우터 최대 60% 시즌오프', snippet: '이번 주말까지만 진행되는 시즌오프. 지금 바로 확인하세요.', hoursAgo: 52, read: true, cat: 'CATEGORY_PROMOTIONS' },
   { acc: P, from: a('2026 관광데이터 활용 공모전', 'contest@knto.or.kr'), subject: '[리마인드] 웹·앱 구현 부문 1차 심사 자료 제출 안내', snippet: '안녕하세요, 2026 관광데이터 활용 공모전 운영사무국입니다. 1차 심사(기능 심사) 자료 제출 기한이', hoursAgo: 75, labels: ['L_contest'] },
   { acc: N, from: a('네이버 카페', 'cafe@naver.com'), subject: '[맥북 사용자 모임] 새 댓글 3개', snippet: 'minji님의 글 "M5 맥북 에어 배터리 후기"에 새 댓글이 달렸습니다.', hoursAgo: 80, read: true, cat: 'CATEGORY_SOCIAL' },

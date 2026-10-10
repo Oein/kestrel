@@ -53,7 +53,7 @@ export function GeneralSettings(): React.JSX.Element {
           <Row label="새 메일 알림" desc="받은편지함에 읽지 않은 새 메일이 오면 알려 줍니다. 창을 보고 있을 때는 알리지 않습니다.">
             <Checkbox checked={s.notifications} onChange={() => update({ notifications: !s.notifications })} title="새 메일 알림" />
           </Row>
-          <Row label="테스트 알림" desc="알림이 오지 않으면 시스템 설정 → 알림에서 Mailbird가 허용되어 있는지 확인하세요.">
+          <Row label="테스트 알림" desc="알림이 오지 않으면 시스템 설정 → 알림에서 Kestrel가 허용되어 있는지 확인하세요.">
             <button className={btn.secondary} onClick={test} disabled={testing}>
               <Icon name="bell" size={14} />
               테스트 알림 보내기

@@ -21,7 +21,7 @@ export interface AccountLook {
 
 const read = <T,>(key: string, fallback: T): T => {
   try {
-    const v = localStorage.getItem(`mailbird.${key}`)
+    const v = localStorage.getItem(`kestrel.${key}`)
     return v === null ? fallback : (JSON.parse(v) as T)
   } catch {
     return fallback
@@ -65,7 +65,7 @@ export const setKeyboardNav = (on: boolean): void => {
 export function setPref<K extends keyof Prefs>(key: K, value: Prefs[K]): void {
   usePrefs.setState({ [key]: value } as Pick<Prefs, K>)
   try {
-    localStorage.setItem(`mailbird.${key}`, JSON.stringify(value))
+    localStorage.setItem(`kestrel.${key}`, JSON.stringify(value))
   } catch {
     /* storage unavailable: keep in memory */
   }

@@ -1,7 +1,7 @@
 {
-  "name": "mailbird",
+  "name": "kestrel",
   "version": "0.1.0",
-  "description": "Mailbird - 빠른 데스크톱 메일 클라이언트",
+  "description": "Kestrel - 빠른 데스크톱 메일 클라이언트",
   "main": "./out/main/index.js",
   "author": "oein",
   "private": true,
@@ -52,8 +52,8 @@
     "zustand": "^5.0.15"
   },
   "build": {
-    "appId": "kr.oein.mailbird",
-    "productName": "Mailbird",
+    "appId": "kr.oein.kestrel",
+    "productName": "Kestrel",
     "directories": {
       "output": "dist"
     },
@@ -63,7 +63,8 @@
       "package.json"
     ],
     "mac": {
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns"
     }
   }
 }

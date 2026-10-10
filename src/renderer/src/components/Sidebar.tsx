@@ -124,7 +124,7 @@ function Item(props: {
 
 const loadCollapsed = (): Record<string, boolean> => {
   try {
-    return JSON.parse(localStorage.getItem('mailbird.sidebarCollapsed') ?? '{}') as Record<string, boolean>
+    return JSON.parse(localStorage.getItem('kestrel.sidebarCollapsed') ?? '{}') as Record<string, boolean>
   } catch {
     return {}
   }
@@ -139,7 +139,7 @@ function useCollapsible(id: string): [boolean, (open: boolean) => void] {
     if (v) delete collapsedSections[id]
     else collapsedSections[id] = true
     try {
-      localStorage.setItem('mailbird.sidebarCollapsed', JSON.stringify(collapsedSections))
+      localStorage.setItem('kestrel.sidebarCollapsed', JSON.stringify(collapsedSections))
     } catch {
       /* ignore */
     }
@@ -323,8 +323,11 @@ export function AccountRail(): React.JSX.Element {
   const total = Object.values(unread).reduce((a, b) => a + b, 0)
   const offset = multi ? 2 : 1
   return (
-    <div className="flex h-full w-[64px] shrink-0 flex-col items-center border-r border-line bg-hover">
+    // the top strip is shared title-bar space for the traffic lights (they are wider than the rail),
+    // so the rail's own panel starts below it
+    <div className="flex h-full w-[64px] shrink-0 flex-col">
       <div className="drag h-[52px] w-full shrink-0" />
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center rounded-tr-[14px] border-r border-t border-line bg-hover pt-2.5">
       {narrow && (
         <div className="mb-2 flex shrink-0 justify-center">
           <IconButton icon="menu" title="폴더 · 라벨" active={drawerOpen} onClick={() => setDrawer(!drawerOpen)} />
@@ -370,6 +373,7 @@ export function AccountRail(): React.JSX.Element {
       <div className="flex shrink-0 flex-col items-center gap-1 pb-3">
         <IconButton icon="command" title="명령 팔레트 (⌘K)" onClick={() => useStore.setState({ paletteOpen: true })} />
         <IconButton icon="settings" title="설정 (⌘,)" onClick={() => openSettings()} />
+        </div>
       </div>
     </div>
   )
@@ -428,13 +432,15 @@ export function Sidebar(): React.JSX.Element {
 
   return (
     <aside className="flex h-full w-[224px] shrink-0 flex-col">
-      <div className="drag flex h-[52px] shrink-0 items-end px-5 pb-1">
-        <div key={filter ?? 'all'} className="animate-fade min-w-0">
-          <div className="truncate text-[13px] font-semibold text-ink">{scope ? scope.email.split('@')[0] : multi ? '모든 계정' : (accounts[0]?.email.split('@')[0] ?? 'Mailbird')}</div>
+      {/* the top strip is the window's title bar (traffic lights); the scope title sits below it */}
+      <div className="drag h-[52px] shrink-0" />
+      <div key={`head:${filter ?? 'all'}`} className="drag animate-fade min-w-0 px-5 pb-3">
+        <div className="truncate text-[13px] font-semibold text-ink">
+          {scope ? scope.email.split('@')[0] : multi ? '모든 계정' : (accounts[0]?.email.split('@')[0] ?? 'Kestrel')}
         </div>
-      </div>
-      <div className="truncate px-5 pb-3 text-[11.5px] text-ink-3">
-        {scope ? `@${scope.email.split('@')[1]}` : multi ? `${accounts.length}개 계정 통합` : accounts[0] ? `@${accounts[0].email.split('@')[1]}` : ''}
+        <div className="truncate text-[11.5px] text-ink-3">
+          {scope ? `@${scope.email.split('@')[1]}` : multi ? `${accounts.length}개 계정 통합` : accounts[0] ? `@${accounts[0].email.split('@')[1]}` : ''}
+        </div>
       </div>
 
       <div className="px-3 pb-2">
@@ -448,7 +454,7 @@ export function Sidebar(): React.JSX.Element {
         </button>
       </div>
 
-      <nav key={filter ?? 'all'} className="animate-fade min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+      <nav key={`nav:${filter ?? 'all'}`} className="animate-fade min-h-0 flex-1 overflow-y-auto px-3 pb-4">
         <div className="space-y-px">
           {NAV.map((n) => (
             <Item

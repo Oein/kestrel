@@ -1,4 +1,4 @@
-// Shared Mailbird primitives. Every screen builds on these so the look stays consistent.
+// Shared Kestrel primitives. Every screen builds on these so the look stays consistent.
 import type { Address } from '../../../shared/types'
 import { avatarColor, initials } from '../lib/format'
 import { ACCOUNT_ICONS } from '../lib/accountIcons'

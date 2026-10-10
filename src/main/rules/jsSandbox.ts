@@ -69,7 +69,7 @@ function errorText(e: unknown): string {
 /** Run one rule over many messages (JSON strings). `timeoutMs` applies to each message. */
 export function runJsBatch(code: string, inputs: string[], timeoutMs = 200): BatchOutcome {
   const ctx = vm.createContext(Object.create(null), {
-    name: 'mailbird-rule',
+    name: 'kestrel-rule',
     codeGeneration: { strings: false, wasm: false }
   }) as Record<string, unknown>
   try {

@@ -1,4 +1,4 @@
-# Mailbird
+# Kestrel
 
 빠른 속도를 최우선으로 하는 데스크톱 메일 클라이언트입니다. Gmail과 비슷한 UI에 읽기 창(분할 보기), Gmail 단축키, ⌘K 명령 팔레트, 통합 받은편지함을 제공합니다.
 
@@ -23,7 +23,7 @@ pnpm test         # 단위 테스트 (vitest)
 pnpm package      # macOS 앱 번들 생성 (dist/)
 ```
 
-데이터베이스와 설정은 `~/Library/Application Support/Mailbird/mailbird.sqlite`에 저장됩니다.
+데이터베이스와 설정은 `~/Library/Application Support/Kestrel/kestrel.sqlite`에 저장됩니다.
 OAuth refresh token, IMAP 비밀번호, OAuth 클라이언트 보안 비밀번호는 Electron `safeStorage`(macOS 키체인)로 암호화해 저장합니다.
 
 ## Gmail 설정 (Google OAuth 클라이언트)
@@ -103,7 +103,7 @@ GOOGLE_CLIENT_DOMAINS_SCHOOL=school.ac.kr   # 쉼표로 구분, 이 도메인 �
 ```
 
 - **JavaScript**: `function rule(msg) { ... }`, `export default (msg) => ...`, 또는 함수 본문만(`msg`를 쓰고 `return`) 작성할 수 있습니다. 별도 프로세스(Electron utilityProcess)의 `node:vm` 샌드박스에서 실행되며 `require`·`process`·`fs`·네트워크에 접근할 수 없고, 메일 한 통당 200ms 제한이 있습니다. 동기 함수만 지원합니다. `console.log` 출력은 테스트 결과에 표시됩니다.
-- **Python**: `def rule(msg): ...`를 정의합니다. `python3`(Homebrew `/opt/homebrew/bin`, `/usr/local/bin`, PATH, `/usr/bin` 순으로 찾음, `MAILBIRD_PYTHON`으로 지정 가능)로 실행되며 메일 한 통당 0.5초 제한이 있습니다. Python 규칙은 샌드박스가 아니므로 본인이 작성한 코드만 사용하세요. `print` 출력은 테스트 결과에 표시됩니다.
+- **Python**: `def rule(msg): ...`를 정의합니다. `python3`(Homebrew `/opt/homebrew/bin`, `/usr/local/bin`, PATH, `/usr/bin` 순으로 찾음, `KESTREL_PYTHON`으로 지정 가능)로 실행되며 메일 한 통당 0.5초 제한이 있습니다. Python 규칙은 샌드박스가 아니므로 본인이 작성한 코드만 사용하세요. `print` 출력은 테스트 결과에 표시됩니다.
 - **Gmail**: 라벨은 Gmail 라벨이며 없으면 새로 만듭니다. `category`는 `CATEGORY_*` 라벨을 바꿉니다(`primary` = 기본).
 - **IMAP(iCloud·네이버 등)**: `addLabels`의 **첫 번째** 이름의 폴더로 메일을 **이동**합니다(없으면 만듦). `removeLabels`는 무시됩니다. `category`는 이 앱에만 저장되어 받은편지함 분류 탭(프로모션·소셜·업데이트)에 쓰입니다. 우선순위는 `trash` > `addLabels` > `archive`입니다.
 - 오류가 나도 동기화는 계속되며, 규칙별 마지막 오류·적용 횟수·마지막 실행 시각이 표시됩니다.
@@ -133,7 +133,7 @@ GOOGLE_CLIENT_DOMAINS_SCHOOL=school.ac.kr   # 쉼표로 구분, 이 도메인 �
 
 ## 개발 참고
 
-- `MAILBIRD_USER_DATA=/tmp/mb pnpm dev` 로 별도 프로필(빈 DB)로 실행할 수 있습니다.
-- `MAILBIRD_DEMO=1 pnpm dev` 는 가짜 메일이 채워진 별도 프로필(`Mailbird-demo`)로 실행합니다. 동기화가 꺼져 있고 서버 반영은 로컬에만 적용되며, 보낸 메일은 로컬 보낸편지함에 저장됩니다.
+- `KESTREL_USER_DATA=/tmp/mb pnpm dev` 로 별도 프로필(빈 DB)로 실행할 수 있습니다.
+- `KESTREL_DEMO=1 pnpm dev` 는 가짜 메일이 채워진 별도 프로필(`Kestrel-demo`)로 실행합니다. 동기화가 꺼져 있고 서버 반영은 로컬에만 적용되며, 보낸 메일은 로컬 보낸편지함에 저장됩니다.
 - JavaScript 규칙 워커는 `out/main/ruleWorker.js`(`src/main/rules/jsWorker.ts`)로 따로 빌드됩니다.
 - 구조: `src/main`(SQLite, 동기화, 제공자), `src/preload`(타입이 지정된 `window.api` 브리지), `src/renderer`(React UI), `src/shared`(공용 타입).

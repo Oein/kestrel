@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { CommandPalette, Toasts } from './components/Chrome'
 import { ComposeLayer } from './components/Compose'
 import { AddAccountDialog, openSettings, ReauthBanner, SettingsDialog } from './components/Dialogs'
-import { Icon } from './components/Icon'
+import { KestrelGlyph, KestrelLogo } from './components/Logo'
 import { TooltipLayer } from './components/Tooltip'
 import { ConfirmLayer } from './components/Confirm'
 import { AccountLookEditor, useLookEditor } from './components/AccountLook'
@@ -149,7 +149,7 @@ function useShortcuts(): void {
           openSettings('shortcuts')
           break
         case '/':
-          window.dispatchEvent(new Event('mailbird:focus-search'))
+          window.dispatchEvent(new Event('kestrel:focus-search'))
           break
         default:
           return
@@ -164,10 +164,10 @@ function useShortcuts(): void {
 function Welcome(): React.JSX.Element {
   return (
     <div className="stagger flex h-full flex-col items-center justify-center px-8 text-center">
-      <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent text-accent-ink shadow-[0_8px_24px_var(--accent-soft)]">
-        <Icon name="bird" size={28} stroke={1.9} />
+      <span className="rounded-[14px] shadow-[0_8px_24px_var(--accent-soft)]">
+        <KestrelLogo size={60} />
       </span>
-      <h1 className="mt-6 text-[22px] font-semibold tracking-[-0.02em]">Mailbird</h1>
+      <h1 className="mt-6 text-[22px] font-semibold tracking-[-0.02em]">Kestrel</h1>
       <p className="mt-2 max-w-[360px] text-[13.5px] leading-relaxed text-ink-2">
         Gmail, iCloud, 네이버, IMAP 계정을 한곳에서. 모든 메일은 기기에 저장되어 즉시 열리고, 동기화는 뒤에서 조용히 진행됩니다.
       </p>
@@ -194,7 +194,7 @@ function Welcome(): React.JSX.Element {
 function EmptyPane(): React.JSX.Element {
   return (
     <div className="animate-fade flex h-full flex-col items-center justify-center gap-3 text-ink-3">
-      <Icon name="bird" size={30} stroke={1.4} className="opacity-50" />
+      <KestrelGlyph size={30} className="opacity-50" />
       <div className="flex items-center gap-1.5 text-[12px]">
         <kbd>J</kbd>
         <kbd>K</kbd>로 이동, <kbd>↵</kbd>로 열기

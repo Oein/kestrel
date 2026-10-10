@@ -9,7 +9,7 @@
 }
 
 /*
- * Mailbird design tokens. Warm neutrals + one "ember" accent.
+ * Kestrel design tokens. Warm neutrals + one "ember" accent.
  * Components only use these semantic colors (bg-surface, text-ink-2, border-line, ...), never raw hex.
  */
 :root {

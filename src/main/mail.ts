@@ -728,7 +728,7 @@ export class MailService {
 
   async openAttachment(messageId: number, attachmentId: string): Promise<void> {
     const { data, filename } = await this.attachmentData(messageId, attachmentId)
-    const dir = join(app.getPath('temp'), 'mailbird', String(messageId))
+    const dir = join(app.getPath('temp'), 'kestrel', String(messageId))
     await mkdir(dir, { recursive: true })
     const file = join(dir, filename)
     await writeFile(file, data)

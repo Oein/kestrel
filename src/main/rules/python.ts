@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto'
 import { unlink } from 'fs/promises'
 import type { BatchOutcome, RuleOutcome } from './jsSandbox'
 
-export const PYTHON_RUNNER = `# Mailbird rule runner (generated; overwritten on every run)
+export const PYTHON_RUNNER = `# Kestrel rule runner (generated; overwritten on every run)
 import contextlib, io, json, signal, sys, traceback
 
 
@@ -35,7 +35,7 @@ def on_alarm(signum, frame):
 def main():
     out = sys.stdout
     path, timeout = sys.argv[1], float(sys.argv[2])
-    ns = {'__name__': 'mailbird_rule'}
+    ns = {'__name__': 'kestrel_rule'}
     try:
         with open(path, encoding='utf-8') as f:
             src = f.read()
@@ -77,7 +77,7 @@ export const PYTHON_MISSING = 'python3를 찾을 수 없습니다. Python 3를 �
 
 /** GUI apps get a minimal PATH on macOS, so look in the usual install locations first. */
 export function findPython(): string | null {
-  const env = process.env.MAILBIRD_PYTHON
+  const env = process.env.KESTREL_PYTHON
   if (env && existsSync(env)) return env
   const candidates = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3']
   for (const dir of (process.env.PATH ?? '').split(delimiter)) if (dir) candidates.push(join(dir, 'python3'))

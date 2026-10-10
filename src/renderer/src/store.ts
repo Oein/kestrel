@@ -63,7 +63,7 @@ const initialView: View = { kind: 'role', role: 'inbox', accountId: null, catego
 
 const loadPref = <T,>(key: string, fallback: T): T => {
   try {
-    const v = localStorage.getItem(`mailbird.${key}`)
+    const v = localStorage.getItem(`kestrel.${key}`)
     return v === null ? fallback : (JSON.parse(v) as T)
   } catch {
     return fallback
@@ -71,7 +71,7 @@ const loadPref = <T,>(key: string, fallback: T): T => {
 }
 const savePref = (key: string, v: unknown): void => {
   try {
-    localStorage.setItem(`mailbird.${key}`, JSON.stringify(v))
+    localStorage.setItem(`kestrel.${key}`, JSON.stringify(v))
   } catch {
     /* ignore */
   }

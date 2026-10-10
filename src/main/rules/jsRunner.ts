@@ -18,7 +18,7 @@ export class JsRunner {
 
   private ensure(): UtilityProcess {
     if (this.proc) return this.proc
-    const p = utilityProcess.fork(join(__dirname, 'ruleWorker.js'), [], { serviceName: 'Mailbird Rules' })
+    const p = utilityProcess.fork(join(__dirname, 'ruleWorker.js'), [], { serviceName: 'Kestrel Rules' })
     p.on('message', (m: BatchOutcome & { id: number }) => {
       const job = this.pending.get(m.id)
       if (!job) return

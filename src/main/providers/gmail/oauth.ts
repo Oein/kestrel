@@ -39,7 +39,7 @@ export function cancelAuth(): void {
 }
 
 const PAGE = (title: string, msg: string): string => `<!doctype html><html lang="ko"><meta charset="utf-8">
-<title>Mailbird</title><body style="font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f8fc">
+<title>Kestrel</title><body style="font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f6f8fc">
 <div style="text-align:center"><h2>${title}</h2><p style="color:#5f6368">${msg}</p></div></body></html>`
 
 /** OAuth 2.0 for installed apps: loopback redirect + PKCE. */
@@ -80,7 +80,7 @@ export async function authorize(client: ClientCredentials, loginHint?: string): 
         finish(new Error(error === 'access_denied' ? '권한 요청이 거부되었습니다.' : '로그인에 실패했습니다.'))
         return
       }
-      res.end(PAGE('로그인 완료', '이 창을 닫고 Mailbird로 돌아가세요.'))
+      res.end(PAGE('로그인 완료', '이 창을 닫고 Kestrel로 돌아가세요.'))
       try {
         const port = (server.address() as AddressInfo).port
         const body = new URLSearchParams({

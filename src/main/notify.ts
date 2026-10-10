@@ -67,7 +67,7 @@ export class Notifier {
     const id = this.repo.recentInboxIds(1)[0]
     const m = id !== undefined ? this.repo.meta(id) : undefined
     if (m) this.show({ title: sender(m), subtitle: m.subject || '(제목 없음)', body: m.snippet || '테스트 알림입니다.' }, m.id)
-    else this.show({ title: 'Mailbird', body: '테스트 알림입니다. 새 메일이 오면 이렇게 알려 드려요.' }, null)
+    else this.show({ title: 'Kestrel', body: '테스트 알림입니다. 새 메일이 오면 이렇게 알려 드려요.' }, null)
   }
 
   private show(opts: { title: string; subtitle?: string; body: string }, messageId: number | null): void {
