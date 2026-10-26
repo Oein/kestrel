@@ -56,7 +56,12 @@ export class GmailApi {
   async request<T>(
     method: string,
     path: string,
-    opts: { query?: Record<string, string | number | string[] | undefined>; body?: unknown } = {}
+    opts: {
+      query?: Record<string, string | number | string[] | undefined>
+      body?: unknown
+      /** streams the response and reports bytes of body text received so far */
+      onBytes?: (n: number) => void
+    } = {}
   ): Promise<T> {
     const url = new URL(API + path)
     for (const [k, v] of Object.entries(opts.query ?? {})) {
@@ -77,7 +82,7 @@ export class GmailApi {
       })
       if (res.ok) {
         if (res.status === 204) return undefined as T
-        const text = await res.text()
+        const text = opts.onBytes ? await readText(res, opts.onBytes) : await res.text()
         return (text ? JSON.parse(text) : undefined) as T
       }
       if (res.status === 401 && attempt === 0) {
@@ -152,4 +157,19 @@ export class GmailApi {
       return parseBatchResponse(await res.text(), respBoundary)
     }
   }
+}
+
+async function readText(res: Response, onBytes: (n: number) => void): Promise<string> {
+  if (!res.body) return res.text()
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let n = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    n += value.length
+    onBytes(n)
+  }
+  return Buffer.concat(chunks).toString('utf8')
 }

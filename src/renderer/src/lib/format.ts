@@ -42,6 +42,14 @@ export function fileSize(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
+/** compact size for progress readouts: 820KB, 3.3MB */
+export function shortSize(n: number): string {
+  if (n < 1024) return `${Math.round(n)}B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)}KB`
+  if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1)}MB`
+  return `${(n / 1024 ** 3).toFixed(2)}GB`
+}
+
 export function displayName(a: Address): string {
   return a.name || a.email
 }

@@ -41,7 +41,8 @@ export interface MailProvider {
   /** load older messages of a mailbox (null = inbox). Returns number of messages added. */
   backfill(mailboxId: string | null): Promise<number>
   fetchBodies(refs: LocalMessageRef[]): Promise<Map<number, FetchedBody>>
-  fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo): Promise<Buffer>
+  /** `onProgress` receives decoded bytes received so far */
+  fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo, onProgress?: (loaded: number) => void): Promise<Buffer>
   /** push local optimistic state changes to the server */
   applyChanges(changes: StateChange[]): Promise<void>
   send(raw: Buffer, draft: Draft, envelope: SendEnvelope): Promise<void>

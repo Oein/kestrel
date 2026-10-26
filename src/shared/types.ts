@@ -195,6 +195,20 @@ export interface ToastEvent {
   message: string
 }
 
+export interface DownloadProgress {
+  /** unique per download */
+  id: string
+  kind: 'open' | 'save'
+  filename: string
+  /** decoded bytes received so far (estimated for Gmail) */
+  loaded: number
+  /** 0 when unknown */
+  total: number
+  /** bytes/s over the last ~second */
+  rate: number
+  state: 'active' | 'done' | 'error'
+}
+
 export interface ImapTestResult {
   ok: boolean
   imap: string | null // error message, null if ok
@@ -232,6 +246,8 @@ export interface AppEvents {
   'settings:changed': AppSettings
   /** rule list/stats changed (saved, removed, run finished) */
   'rules:changed': Record<string, never>
+  /** attachment download progress; throttled, first event only after a short delay */
+  download: DownloadProgress
 }
 
 // ---------- app settings ----------

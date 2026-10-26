@@ -15,6 +15,7 @@ import {
   useStore
 } from '../store'
 import { Icon, type IconName } from './Icon'
+import { shortSize } from '../lib/format'
 import { useLeaving } from '../lib/motion'
 import { setPref, usePrefs } from '../lib/prefs'
 import { openSettings } from './Dialogs'
@@ -27,14 +28,17 @@ export function Toasts(): React.JSX.Element {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`${t.leaving ? 'animate-sink pointer-events-none' : 'animate-rise pointer-events-auto'} flex h-10 max-w-[560px] items-center gap-3 rounded-xl bg-[#1f1e1b] pl-3.5 pr-1.5 text-[13px] text-[#f1efea] shadow-float dark:bg-[#f1efea] dark:text-[#1f1e1b]`}
+          className={`${t.leaving ? 'animate-sink pointer-events-none' : 'animate-rise pointer-events-auto'} relative flex h-10 max-w-[560px] items-center gap-3 overflow-hidden rounded-xl bg-[#1f1e1b] pl-3.5 pr-1.5 text-[13px] text-[#f1efea] shadow-float dark:bg-[#f1efea] dark:text-[#1f1e1b]`}
         >
-          {t.kind === 'error' ? (
+          {t.progress ? (
+            <Icon name="download" size={15} className="text-[#ff9a76] dark:text-accent" />
+          ) : t.kind === 'error' ? (
             <Icon name="warning" size={15} className="text-[#ff8a75] dark:text-danger" />
           ) : t.kind === 'success' ? (
             <Icon name="check" size={15} className="text-[#5fd3a0] dark:text-ok" />
           ) : null}
-          <span className="truncate">{t.message}</span>
+          <span className={cx('truncate', t.progress && 'max-w-[240px]')}>{t.message}</span>
+          {t.progress && <DownloadStats {...t.progress} />}
           {t.action && (
             <button
               className="flex h-7 items-center gap-1.5 rounded-lg px-2 font-semibold text-[#ff9a76] hover:bg-white/10 dark:text-accent dark:hover:bg-black/5"
@@ -50,9 +54,25 @@ export function Toasts(): React.JSX.Element {
           <button onClick={() => dismissToast(t.id)} className="flex h-7 w-7 items-center justify-center rounded-lg opacity-50 hover:bg-white/10 hover:opacity-100 dark:hover:bg-black/5">
             <Icon name="close" size={14} />
           </button>
+          {t.progress && t.progress.total > 0 && (
+            <span
+              className="absolute bottom-0 left-0 h-[2px] bg-[#ff9a76] transition-[width] duration-150 ease-linear dark:bg-accent"
+              style={{ width: `${(t.progress.loaded / t.progress.total) * 100}%` }}
+            />
+          )}
         </div>
       ))}
     </div>
+  )
+}
+
+function DownloadStats({ loaded, total, rate }: { loaded: number; total: number; rate: number }): React.JSX.Element {
+  return (
+    <span className="tnum flex shrink-0 items-center gap-2 text-[12px] opacity-70">
+      {total > 0 && <span className="font-semibold opacity-100">{Math.floor((loaded / total) * 100)}%</span>}
+      <span>{total > 0 ? `${shortSize(loaded)}/${shortSize(total)}` : shortSize(loaded)}</span>
+      <span>{shortSize(rate)}/s</span>
+    </span>
   )
 }
 

@@ -315,17 +315,23 @@ export class GmailApiProvider implements MailProvider {
     return out
   }
 
-  private async attachmentData(messageRemoteId: string, attachmentId: string): Promise<Buffer> {
+  private async attachmentData(
+    messageRemoteId: string,
+    attachmentId: string,
+    onProgress?: (loaded: number) => void
+  ): Promise<Buffer> {
     const res = await this.api.request<{ data: string }>(
       'GET',
-      `/gmail/v1/users/me/messages/${messageRemoteId}/attachments/${attachmentId}`
+      `/gmail/v1/users/me/messages/${messageRemoteId}/attachments/${attachmentId}`,
+      // the body is base64url JSON, so decoded bytes ≈ 3/4 of the text received
+      { onBytes: onProgress && ((n) => onProgress(Math.floor((n * 3) / 4))) }
     )
     return fromBase64Url(res.data)
   }
 
-  async fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo): Promise<Buffer> {
+  async fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo, onProgress?: (loaded: number) => void): Promise<Buffer> {
     try {
-      return await this.attachmentData(ref.remoteId, att.id)
+      return await this.attachmentData(ref.remoteId, att.id, onProgress)
     } catch (e) {
       // attachment ids rotate between fetches; refetch the message to get a fresh id
       if (!(e instanceof GmailHttpError)) throw e
@@ -334,7 +340,7 @@ export class GmailApiProvider implements MailProvider {
       })
       const fresh = extractBody(msg.payload).attachments.find((a) => a.filename === att.filename && a.size === att.size)
       if (!fresh) throw e
-      return await this.attachmentData(ref.remoteId, fresh.id)
+      return await this.attachmentData(ref.remoteId, fresh.id, onProgress)
     }
   }
 

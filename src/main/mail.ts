@@ -7,6 +7,7 @@ import {
   type Account,
   type ActionRequest,
   type AppEvents,
+  type DownloadProgress,
   type Draft,
   type DraftAttachment,
   type ImapAccountInput,
@@ -713,7 +714,11 @@ export class MailService {
   }
 
   // ---------- attachments ----------
-  private async attachmentData(messageId: number, attachmentId: string): Promise<{ data: Buffer; filename: string }> {
+  private async attachmentData(
+    messageId: number,
+    attachmentId: string,
+    kind: DownloadProgress['kind']
+  ): Promise<{ data: Buffer; filename: string }> {
     const ref = this.repo.ref(messageId)
     if (!ref) throw new Error('메시지를 찾을 수 없습니다.')
     const body = this.repo.getBody(messageId)
@@ -722,12 +727,20 @@ export class MailService {
     if (!att) throw new Error('첨부파일을 찾을 수 없습니다.')
     const provider = this.providers.get(ref.accountId)
     if (!provider) throw new Error('계정이 연결되어 있지 않습니다.')
-    const data = await provider.fetchAttachment(ref, att)
-    return { data, filename: att.filename.replace(/[/\\:]/g, '_') || 'attachment' }
+    const filename = att.filename.replace(/[/\\:]/g, '_') || 'attachment'
+    const progress = new DownloadTracker((p) => this.emit('download', p), kind, filename, att.size)
+    try {
+      const data = await provider.fetchAttachment(ref, att, (n) => progress.update(n))
+      progress.finish('done', data.length)
+      return { data, filename }
+    } catch (e) {
+      progress.finish('error')
+      throw e
+    }
   }
 
   async openAttachment(messageId: number, attachmentId: string): Promise<void> {
-    const { data, filename } = await this.attachmentData(messageId, attachmentId)
+    const { data, filename } = await this.attachmentData(messageId, attachmentId, 'open')
     const dir = join(app.getPath('temp'), 'kestrel', String(messageId))
     await mkdir(dir, { recursive: true })
     const file = join(dir, filename)
@@ -743,8 +756,54 @@ export class MailService {
     const opts = { defaultPath: join(app.getPath('downloads'), name) }
     const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
     if (res.canceled || !res.filePath) return
-    const { data } = await this.attachmentData(messageId, attachmentId)
+    const { data } = await this.attachmentData(messageId, attachmentId, 'save')
     await writeFile(res.filePath, data)
-    this.emit('toast', { kind: 'success', message: '첨부파일을 저장했습니다.' })
+  }
+}
+
+/**
+ * Throttled download progress events. Nothing is sent for downloads that finish within
+ * SHOW_AFTER ms, so small files don't flash a progress snackbar.
+ */
+class DownloadTracker {
+  private static readonly SHOW_AFTER = 300
+  private static readonly INTERVAL = 150
+  private readonly id = randomUUID()
+  private readonly started = Date.now()
+  private lastSent = 0
+  private shown = false
+  private loaded = 0
+  /** (time, loaded) samples from the last ~second, for the rate */
+  private samples: [number, number][] = [[Date.now(), 0]]
+
+  constructor(
+    private send: (p: DownloadProgress) => void,
+    private kind: DownloadProgress['kind'],
+    private filename: string,
+    private total: number
+  ) {}
+
+  update(loaded: number): void {
+    const now = Date.now()
+    this.loaded = this.total ? Math.min(loaded, this.total) : loaded
+    this.samples.push([now, this.loaded])
+    while (this.samples.length > 2 && now - this.samples[1][0] > 1000) this.samples.shift()
+    if (now - this.started < DownloadTracker.SHOW_AFTER || now - this.lastSent < DownloadTracker.INTERVAL) return
+    this.lastSent = now
+    this.shown = true
+    this.emit('active')
+  }
+
+  finish(state: 'done' | 'error', size?: number): void {
+    if (size !== undefined) this.loaded = size
+    // save always reports completion (the renderer shows the "saved" toast from it)
+    if (this.shown || (state === 'done' && this.kind === 'save')) this.emit(state)
+  }
+
+  private emit(state: DownloadProgress['state']): void {
+    const [t0, b0] = this.samples[0]
+    const dt = (Date.now() - t0) / 1000
+    const rate = dt > 0 ? (this.loaded - b0) / dt : 0
+    this.send({ id: this.id, kind: this.kind, filename: this.filename, loaded: this.loaded, total: this.total, rate, state })
   }
 }

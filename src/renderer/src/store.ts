@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   Account,
+  DownloadProgress,
   Draft,
   InboxCategory,
   MailAction,
@@ -23,6 +24,8 @@ export interface Toast {
   message: string
   action?: { label: string; run: () => void }
   ttl: number
+  /** download snackbar: stays up (no ttl) while active */
+  progress?: { loaded: number; total: number; rate: number }
 }
 
 export interface ComposeState {
@@ -253,6 +256,29 @@ export function toast(kind: Toast['kind'], message: string, action?: Toast['acti
 }
 export function dismissToast(id: number): void {
   set({ toasts: get().toasts.filter((t) => t.id !== id) })
+}
+
+/** download id → toast id */
+const downloadToasts = new Map<string, number>()
+function onDownload(d: DownloadProgress): void {
+  const tid = downloadToasts.get(d.id)
+  if (d.state === 'active') {
+    const progress = { loaded: d.loaded, total: d.total, rate: d.rate }
+    const existing = get().toasts.find((t) => t.id === tid)
+    if (existing) {
+      set({ toasts: get().toasts.map((t) => (t.id === tid ? { ...t, progress } : t)) })
+    } else if (tid === undefined) {
+      // dismissed toasts stay mapped so later events don't bring them back
+      const id = ++toastSeq
+      downloadToasts.set(d.id, id)
+      set({ toasts: [...get().toasts.slice(-3), { id, kind: 'info', message: d.filename, ttl: Infinity, progress }] })
+    }
+    return
+  }
+  downloadToasts.delete(d.id)
+  if (tid !== undefined) dismissToast(tid)
+  // failures surface through the rejected IPC call
+  if (d.state === 'done' && d.kind === 'save') toast('success', `첨부파일을 저장했습니다 — ${d.filename}`)
 }
 
 // ---------- bodies cache ----------
@@ -569,6 +595,7 @@ export async function init(): Promise<void> {
   })
   api.on('sync:status', (st) => set({ statuses: { ...get().statuses, [st.accountId]: st } }))
   api.on('toast', (t) => toast(t.kind, t.message))
+  api.on('download', onDownload)
   api.on('open-message', ({ messageId }) => openThread(messageId))
   api.on('search:updated', ({ token }) => {
     const v = get().view

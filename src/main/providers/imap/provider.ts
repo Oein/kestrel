@@ -533,7 +533,7 @@ export class ImapProvider implements MailProvider {
     return out
   }
 
-  async fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo): Promise<Buffer> {
+  async fetchAttachment(ref: LocalMessageRef, att: AttachmentInfo, onProgress?: (loaded: number) => void): Promise<Buffer> {
     if (att.id.startsWith('idx:')) {
       const p = await this.parse(ref)
       const a = p.attachments[Number(att.id.slice(4))]
@@ -545,7 +545,12 @@ export class ImapProvider implements MailProvider {
       const dl = await c.download(String(uid), att.id, { uid: true })
       if (!('content' in dl) || !dl.content) throw new Error('첨부파일을 찾을 수 없습니다.')
       const chunks: Buffer[] = []
-      for await (const chunk of dl.content) chunks.push(chunk as Buffer)
+      let loaded = 0
+      for await (const chunk of dl.content) {
+        chunks.push(chunk as Buffer)
+        loaded += (chunk as Buffer).length
+        onProgress?.(loaded)
+      }
       return Buffer.concat(chunks)
     })
   }
